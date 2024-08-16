@@ -100,32 +100,6 @@
     const storage = getStorage(app);
     const database = getDatabase(app);
 
-    // Constants for email and password
-    const EMAIL = "lanre.mohammed23@gmail.com";
-    const PASSWORD = "Wilmar.jr7";
-
-    // Function to authenticate and display image
-    async function authenticateAndLoadImage() {
-      try {
-        // Sign in with email and password
-        const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
-        console.log("User signed in:", userCredential.user);
-
-        // Load the logo image after successful login
-        const logoImage = document.querySelector('#logo');
-        const logoRef = ref(storage, 'Blazers-Logo.png');
-        const url = await getDownloadURL(logoRef);
-        logoImage.src = url;
-
-      } catch (error) {
-        console.error("Error signing in:", error);
-        alert("Authentication failed.");
-      }
-    }
-
-    // Call the function to authenticate and load the image
-    authenticateAndLoadImage();
-
     const analysisSection = document.getElementById('analysis-section');
 
   // Hide the analysis section initially
@@ -137,22 +111,30 @@
       const displayName = document.getElementById('display-name');
       
       // Function to load rock data from Firebase Realtime Database
-    async function loadRockData() {
-      try {
-        
-          const rockDataRef = dbRef(database, 'Samples'); // Reference to 'rockData' node in your database
-          const snapshot = await get(child(rockDataRef, '/'));
-
-          if (snapshot.exists()) {
-              const rockData = snapshot.val();
-              displayRockGallery(rockData);
-          } else {
-              console.error("No data available");
-          }
-      } catch (error) {
-          console.error("Error fetching rock data:", error);
-      }
-  }
+      async function loadRockData() {
+        const auth = getAuth();
+        const email = "lanre.mohammed23@gmail.com"; // Replace with the actual user email
+        const password = "Wilmar.jr7"; // Replace with the actual user password
+    
+        try {
+            // Authenticate the user first
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    
+            // If authentication is successful, proceed with loading the rock data
+            const rockDataRef = dbRef(database, 'Samples'); // Reference to 'Samples' node in your database
+            const snapshot = await get(child(rockDataRef, '/'));
+    
+            if (snapshot.exists()) {
+                const rockData = snapshot.val();
+                displayRockGallery(rockData); // Call your function to display the data
+            } else {
+                console.error("No data available");
+            }
+        } catch (error) {
+            console.error("Error during authentication or fetching rock data:", error);
+        }
+    }
+    
 
   // Function to display the rock gallery
   function displayRockGallery(rockData) {
@@ -440,8 +422,40 @@ async function analyzeUnanalyzedSamples() {
   }
 }
 
-// Call this function after loading the model
-loadModel().then(() => analyzeUnanalyzedSamples());
+// Constants for email and password
+const EMAIL = "lanre.mohammed23@gmail.com";
+const PASSWORD = "Wilmar.jr7";
+
+// Function to authenticate and display image
+async function authenticateAndLoadImage() {
+  try {
+    // Sign in with email and password
+    const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
+    console.log("User signed in:", userCredential.user);
+
+    // Load the logo image after successful login
+    const logoImage = document.querySelector('#logo');
+    const logoRef = ref(storage, 'Blazers-Logo.png');
+    const url = await getDownloadURL(logoRef);
+    logoImage.src = url;
+
+    initializeAppFunctions();
+
+  } catch (error) {
+    console.error("Error signing in:", error);
+    alert("Authentication failed.");
+  }
+}
+
+function initializeAppFunctions() {
+  
+  loadModel().then(() => analyzeUnanalyzedSamples());
+}
+
+authenticateAndLoadImage();
+
+
+
 
 
 </script>

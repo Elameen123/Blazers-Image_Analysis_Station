@@ -259,6 +259,17 @@
   text-transform: uppercase;
 }
 
+#display-image {
+  background-color: #ccc;
+}
+
+#save-analysis-btn {
+  padding: 0.4rem 1rem;
+  border-radius: 5px;
+  /* align-self: center; */
+
+}
+
 
 #properties-container {
   overflow-y: auto;
