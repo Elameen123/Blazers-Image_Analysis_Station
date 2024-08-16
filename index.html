@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blazers Command Station</title>
+  <link href="https://fonts.cdnfonts.com/css/cascadia-code" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+
+<link rel="stylesheet" href="./index.css">
+</head>
+<body>
+  <div id="projectContainer">
+
+    <div id="headerContainer">
+      <img src="" alt="blazers_logo" class="logo" id="logo"/>
+      <h2>Sample Image Analysis Station</h2>
+    </div>
+
+    <div id="pictureContainer">
+        <div id="album">
+          <div id="rock-gallery" class="photoBox">
+            
+          </div>
+        </div>
+
+        <div id="singlePickout">
+          <img id="display-image" src="" alt="Selected Image" />
+          <h3 id="display-name">Selected Image Name</h3>
+          <button type="submit" id="analyze-btn">Analyze</button>
+        </div>
+    </div>
+
+    <div id="analysisContainer">
+      <div id="analysisHeader">
+        <h6>ANALYSIS CONSOLE</h6>
+
+        <div id="analysis-content">
+      
+          <div id="status">
+              <span id="status-text">RUNNING ANALYSIS. . .</span>
+              <div id="progress-container">
+                  <div id="progress-bar"></div>
+              </div>
+          </div>
+          <div id="result-message">IMAGE ANALYSIS COMPLETE!</div>
+
+      </div>
+      
+      </div>
+
+      <div id="analysis-section">
+        <div id="properties-container" class="analysis-box">
+            <!-- Rock properties will be populated here -->
+        </div>
+        <div id="life-support-container" class="analysis-box">
+            <!-- Life support potential will be populated here -->
+        </div>
+        <div id="analyst-container" class="analysis-box">
+            <input type="text" id="image-name-input" placeholder="Change Image Name">
+            <textarea id="comment-input" placeholder="Add comments"></textarea>
+            <input type="text" id="analyst-name" placeholder="Analyst Name and Designation">
+            <button id="save-analysis-btn">Save Analysis</button>
+
+            
+        </div>
+    </div>
+
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+    import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
+    import { getDatabase, ref as dbRef, child, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    
+
+
+    // Web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyA6c_4j2Zw33NdlP2jSbIp0ySHGSmpluQ8",
+      authDomain: "blazers-rovers-sample-database.firebaseapp.com",
+      projectId: "blazers-rovers-sample-database",
+      storageBucket: "blazers-rovers-sample-database.appspot.com",
+      messagingSenderId: "464730486363",
+      appId: "1:464730486363:web:78ccfde176cea53e21317e"
+    };
+
+    
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+    const database = getDatabase(app);
+
+    // Constants for email and password
+    const EMAIL = "lanre.mohammed23@gmail.com";
+    const PASSWORD = "Wilmar.jr7";
+
+    // Function to authenticate and display image
+    async function authenticateAndLoadImage() {
+      try {
+        // Sign in with email and password
+        const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
+        console.log("User signed in:", userCredential.user);
+
+        // Load the logo image after successful login
+        const logoImage = document.querySelector('#logo');
+        const logoRef = ref(storage, 'Blazers-Logo.png');
+        const url = await getDownloadURL(logoRef);
+        logoImage.src = url;
+
+      } catch (error) {
+        console.error("Error signing in:", error);
+        alert("Authentication failed.");
+      }
+    }
+
+    // Call the function to authenticate and load the image
+    authenticateAndLoadImage();
+
+    const analysisSection = document.getElementById('analysis-section');
+
+  // Hide the analysis section initially
+  analysisSection.style.display = 'none';
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const gallery = document.getElementById('rock-gallery');
+      const displayImage = document.getElementById('display-image');
+      const displayName = document.getElementById('display-name');
+      
+      // Function to load rock data from Firebase Realtime Database
+    async function loadRockData() {
+      try {
+        
+          const rockDataRef = dbRef(database, 'Samples'); // Reference to 'rockData' node in your database
+          const snapshot = await get(child(rockDataRef, '/'));
+
+          if (snapshot.exists()) {
+              const rockData = snapshot.val();
+              displayRockGallery(rockData);
+          } else {
+              console.error("No data available");
+          }
+      } catch (error) {
+          console.error("Error fetching rock data:", error);
+      }
+  }
+
+  // Function to display the rock gallery
+  function displayRockGallery(rockData) {
+      const gallery = document.getElementById('rock-gallery');
+      const displayImage = document.getElementById('display-image');
+      const displayName = document.getElementById('display-name');
+
+      rockData.forEach(imgData => {
+          const card = document.createElement('div');
+          card.className = 'image-card';
+
+          const img = document.createElement('img');
+          img.src = imgData.image;
+
+          const name = document.createElement('div');
+          name.className = 'image-name';
+          name.innerText = imgData.image_name;
+
+          // Add click event listener to the card
+          card.addEventListener('click', () => {
+
+            analysisSection.style.display = 'none';
+              // Update display box with the clicked image and name
+              displayImage.src = imgData.image;
+              displayName.innerText = imgData.image_name;
+
+              // Clear session storage and store new image data
+            sessionStorage.clear();
+            storeImageInSession(displayImage.src);
+          });
+
+          card.appendChild(img);
+          card.appendChild(name);
+
+          gallery.appendChild(card);
+      });
+  }
+
+  loadRockData();
+
+    });
+
+
+  // Teachable Machine integration
+  const URL = "https://teachablemachine.withgoogle.com/models/NzfitzWEF/";
+  let model, maxPredictions;
+
+  async function loadModel() {
+    const modelURL = URL + "model.json";
+    const metadataURL = URL + "metadata.json";
+    model = await tmImage.load(modelURL, metadataURL);
+    maxPredictions = model.getTotalClasses();
+  }
+
+  async function predictImage(image) {
+    // Ensure image is loaded and accessible
+    const imgElement = document.createElement('img');
+    imgElement.crossOrigin = 'anonymous';  // Handle cross-origin
+    imgElement.src = image.src;
+
+    await new Promise(resolve => imgElement.onload = resolve);
+
+    const prediction = await model.predict(imgElement);
+    return prediction;
+  }
+
+  async function analyzeImage() {
+    const displayImage = document.getElementById('display-image');
+    
+    // Convert image to Base64 and store it in session storage
+    const base64Image = await convertImageToBase64(displayImage.src);
+    sessionStorage.setItem('imageData', base64Image);
+
+    const predictions = await predictImage(displayImage);
+    
+    if (predictions.length > 0) {
+      const highestPrediction = predictions.reduce((prev, current) => (prev.probability > current.probability) ? prev : current);
+      const imageName = highestPrediction.className.toLowerCase();
+      console.log(highestPrediction)
+      console.log(imageName);
+      displayAnalysisData(imageName);
+      analysisSection.style.display = 'flex';
+    }
+  }
+
+  async function convertImageToBase64(imageUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const base64String = canvas.toDataURL('image/jpeg');
+        resolve(base64String);
+      };
+      img.onerror = reject;
+      img.src = imageUrl;
+    });
+  }
+
+  function storeImageInSession(imageData) {
+    try {
+      // Store the image data in session storage
+      sessionStorage.setItem('selectedImage', imageData);
+    } catch (error) {
+      console.error("Error storing image in session storage:", error);
+    }
+  }
+  
+
+  document.getElementById('analyze-btn').addEventListener('click', function () {
+    const status = document.getElementById('status');
+    const progressBar = document.getElementById('progress-bar');
+    const resultMessage = document.getElementById('result-message');
+    const statusText = document.getElementById('status-text');
+
+    status.style.display = 'flex';
+    resultMessage.style.display = 'none';
+    progressBar.style.width = '0%';
+
+    let progress = 0;
+    const interval = setInterval(async () => {
+        progress += 10;
+        progressBar.style.width = progress + '%';
+
+        if (progress >= 100) {
+            clearInterval(interval);
+            status.style.display = 'none';
+            resultMessage.style.display = 'block';
+
+            // Analyze the selected image
+            await analyzeImage();
+
+            // Show the analysis section
+            analysisSection.style.display = 'flex';
+
+            // Save analyst's input to the database
+            document.getElementById('save-analysis-btn').addEventListener('click', async () => {
+                const imageNameInput = document.getElementById('image-name-input').value;
+                const commentInput = document.getElementById('comment-input').value;
+                const analystName = document.getElementById('analyst-name').value;
+
+                if (imageNameInput && commentInput && analystName) {
+                    const updateData = {
+                        analyst_name: analystName,
+                        analyst_comment: commentInput,
+                        image_name: imageNameInput
+                    };
+
+                    const rockDataRef = dbRef(database, 'Samples'); // Reference to 'Samples' node in your database
+                    const displayName = document.getElementById('display-name').innerText.toLowerCase();
+
+                    const snapshot = await get(child(rockDataRef, '/'));
+                    if (snapshot.exists()) {
+                        const rockData = snapshot.val();
+
+                        for (const key in rockData) {
+                            if (rockData.hasOwnProperty(key)) {
+                                const sample = rockData[key];
+
+                                // Update the database with analyst input
+                                if (sample.image_name.toLowerCase() === displayName) {
+                                    await update(child(rockDataRef, key), updateData);
+                                    alert("Analysis saved successfully!");
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        console.error("No data available to update with analyst input");
+                    }
+                } else {
+                    alert("Please fill out all fields in the Analyst section.");
+                }
+            });
+        }
+    }, 1000);
+});
+
+
+  // Load the Teachable Machine model when the page loads
+  loadModel();
+
+  function displayAnalysisData(imageName) {
+    console.log("Searching for data with image name:", imageName.toLowerCase());
+    const datasetRef = dbRef(database, 'Dataset'); // Reference to 'Dataset' node in your database
+    
+    get(datasetRef).then(snapshot => {
+        if (snapshot.exists()) {
+            const dataset = snapshot.val();
+            let sample = null;
+
+            // Iterate through the dataset to find the object with a matching type
+            for (const key in dataset) {
+                if (dataset.hasOwnProperty(key)) {
+                    const subdata = dataset[key];
+                    if (subdata.type && subdata.type.toLowerCase() === imageName.toLowerCase()) {
+                        sample = subdata;
+                        break;
+                    }
+                }
+            }
+
+            if (sample) {
+                console.log("Sample found:", sample);
+
+                // Populate the properties container
+                const propertiesContainer = document.getElementById('properties-container');
+                propertiesContainer.innerHTML = `
+                  <h4>ROCK CHARACTERISTICS</h4>
+                  <p><strong>Type:</strong> ${sample.type}  |  <strong>Formation Process:</strong> ${sample.formation_process}</p>
+                  <p><strong>Description:</strong> ${sample.description}</p>
+                  <p><strong>Texture:</strong> ${sample.texture}  |  <strong>Structure:</strong> ${sample.structure}</p>
+                  <p><strong>Mineral Composition:</strong> ${sample.mineral_composition.join(", ")}</p>
+                `;
+
+                // Populate the life support container
+                const lifeSupportContainer = document.getElementById('life-support-container');
+                const lifeSupportYesNo = sample.life_support_potential.percentage >= 50 ? 
+                  `<span style="color: lightgreen;">Yes</span>` : `<span style="color: red;">No</span>`;
+                lifeSupportContainer.innerHTML = `
+                  <h4>Habitability Assessment</h4>
+                  <p><strong>Signs of Water:</strong> ${sample.signs_of_water ? 'Yes' : 'No'}</p>
+                  <p><strong>Potential to support life:</strong> ${lifeSupportYesNo}, with a ${sample.life_support_potential.percentage}% probability</p>
+                  <p><strong>Reason:</strong> ${sample.life_support_potential.description}</p>
+                `;
+            } else {
+                console.log("No matching sample found for the selected image.");
+                alert("No matching data found for the selected image.");
+            }
+        } else {
+            console.log("No data found in the dataset.");
+            alert("No data found in the dataset.");
+        }
+    }).catch(error => {
+        console.error("Error fetching dataset data:", error);
+    });
+}
+
+// Function to check and analyze unanalyzed samples
+async function analyzeUnanalyzedSamples() {
+  try {
+      const rockDataRef = dbRef(database, 'Samples'); // Reference to 'Samples' node in your database
+      const snapshot = await get(child(rockDataRef, '/'));
+
+      if (snapshot.exists()) {
+          const rockData = snapshot.val();
+          for (const key in rockData) {
+              if (rockData.hasOwnProperty(key)) {
+                  const sample = rockData[key];
+
+                  // Check if the sample has already been analyzed
+                  if (!sample.hasOwnProperty('type') || !sample.hasOwnProperty('life_support_percentage')) {
+                      // If not analyzed, run it through the AI model
+                      const imgElement = document.createElement('img');
+                      imgElement.src = sample.image;
+                      imgElement.crossOrigin = 'anonymous';
+
+                      await new Promise(resolve => imgElement.onload = resolve);
+
+                      const predictions = await model.predict(imgElement);
+
+                      if (predictions.length > 0) {
+                          const highestPrediction = predictions.reduce((prev, current) => (prev.probability > current.probability) ? prev : current);
+                          const imageName = highestPrediction.className.toLowerCase();
+
+                          // Update the sample in the database with the analysis results
+                          const updateData = {
+                              type: imageName,
+                              life_support_percentage: highestPrediction.probability * 100
+                          };
+                          await update(child(rockDataRef, key), updateData);
+                      }
+                  }
+              }
+          }
+      } else {
+          console.error("No data available for analysis");
+      }
+  } catch (error) {
+      console.error("Error analyzing samples:", error);
+  }
+}
+
+// Call this function after loading the model
+loadModel().then(() => analyzeUnanalyzedSamples());
+
+
+</script>
+
+</body>
+</html>
