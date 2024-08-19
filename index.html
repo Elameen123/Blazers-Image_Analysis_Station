@@ -302,6 +302,7 @@
                                 if (sample.image_name.toLowerCase() === displayName) {
                                     await update(child(rockDataRef, key), updateData);
                                     alert("Analysis saved successfully!");
+                                    analysisSection.style.display = 'none';
                                     break;
                                 }
                             }
