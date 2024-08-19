@@ -74,7 +74,7 @@
 
   </div>
 
-  <script type="module">
+  <!-- <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
     import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
@@ -378,51 +378,6 @@
     });
 }
 
-// Function to check and analyze unanalyzed samples
-async function analyzeUnanalyzedSamples() {
-  try {
-      const rockDataRef = dbRef(database, 'Samples'); // Reference to 'Samples' node in your database
-      const snapshot = await get(child(rockDataRef, '/'));
-
-      if (snapshot.exists()) {
-          const rockData = snapshot.val();
-          for (const key in rockData) {
-              if (rockData.hasOwnProperty(key)) {
-                  const sample = rockData[key];
-
-                  // Check if the sample has already been analyzed
-                  if (!sample.hasOwnProperty('type') || !sample.hasOwnProperty('life_support_percentage')) {
-                      // If not analyzed, run it through the AI model
-                      const imgElement = document.createElement('img');
-                      imgElement.src = sample.image;
-                      imgElement.crossOrigin = 'anonymous';
-
-                      await new Promise(resolve => imgElement.onload = resolve);
-
-                      const predictions = await model.predict(imgElement);
-
-                      if (predictions.length > 0) {
-                          const highestPrediction = predictions.reduce((prev, current) => (prev.probability > current.probability) ? prev : current);
-                          const imageName = highestPrediction.className.toLowerCase();
-
-                          // Update the sample in the database with the analysis results
-                          const updateData = {
-                              type: imageName,
-                              life_support_percentage: highestPrediction.probability * 100
-                          };
-                          await update(child(rockDataRef, key), updateData);
-                      }
-                  }
-              }
-          }
-      } else {
-          console.error("No data available for analysis");
-      }
-  } catch (error) {
-      console.error("Error analyzing samples:", error);
-  }
-}
-
 // Constants for email and password
 const EMAIL = "lanre.mohammed23@gmail.com";
 const PASSWORD = "Wilmar.jr7";
@@ -440,7 +395,6 @@ async function authenticateAndLoadImage() {
     const url = await getDownloadURL(logoRef);
     logoImage.src = url;
 
-    initializeAppFunctions();
 
   } catch (error) {
     console.error("Error signing in:", error);
@@ -448,17 +402,312 @@ async function authenticateAndLoadImage() {
   }
 }
 
-function initializeAppFunctions() {
-  
-  loadModel().then(() => analyzeUnanalyzedSamples());
-}
-
+loadModel();
 authenticateAndLoadImage();
 
 
+</script> -->
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+  import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
+  import { getDatabase, ref as dbRef, child, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+  
+  const firebaseConfig = {
+    apiKey: "AIzaSyA6c_4j2Zw33NdlP2jSbIp0ySHGSmpluQ8",
+    authDomain: "blazers-rovers-sample-database.firebaseapp.com",
+    projectId: "blazers-rovers-sample-database",
+    storageBucket: "blazers-rovers-sample-database.appspot.com",
+    messagingSenderId: "464730486363",
+    appId: "1:464730486363:web:78ccfde176cea53e21317e"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const storage = getStorage(app);
+  const database = getDatabase(app);
+
+  const analysisSection = document.getElementById('analysis-section');
+  analysisSection.style.display = 'none';
+
+  document.addEventListener('DOMContentLoaded', function () {
+      const gallery = document.getElementById('rock-gallery');
+      const displayImage = document.getElementById('display-image');
+      const displayName = document.getElementById('display-name');
+    
+      async function loadRockData() {
+          const auth = getAuth();
+          const email = "lanre.mohammed23@gmail.com";
+          const password = "Wilmar.jr7";
+  
+          try {
+              const userCredential = await signInWithEmailAndPassword(auth, email, password);
+              const rockDataRef = dbRef(database, 'Samples');
+              const snapshot = await get(child(rockDataRef, '/'));
+  
+              if (snapshot.exists()) {
+                  const rockData = snapshot.val();
+                  displayRockGallery(rockData);
+              } else {
+                  console.error("No data available");
+              }
+          } catch (error) {
+              console.error("Error during authentication or fetching rock data:", error);
+          }
+      }
+
+      function displayRockGallery(rockData) {
+          const gallery = document.getElementById('rock-gallery');
+
+          Object.values(rockData).forEach(imgData => {
+              const card = document.createElement('div');
+              card.className = 'image-card';
+
+              const img = document.createElement('img');
+              img.setAttribute('loading', 'lazy');  // Lazy loading
+
+              const placeholder = 'data:image/svg+xml;base64,...';  // Placeholder base64 encoded string
+              img.src = placeholder;  // Set the placeholder image first
+
+              // Fetch the actual image and replace the placeholder
+              const imgRef = ref(storage, imgData.image);
+              getDownloadURL(imgRef).then((url) => {
+                  img.src = url;
+              }).catch((error) => {
+                  console.error("Error fetching image:", error);
+              });
+
+              const name = document.createElement('div');
+              name.className = 'image-name';
+              name.innerText = imgData.image_name;
+
+              card.addEventListener('click', () => {
+                  analysisSection.style.display = 'none';
+                  displayImage.src = img.src;
+                  displayName.innerText = imgData.image_name;
+
+                  sessionStorage.clear();
+                  storeImageInSession(displayImage.src);
+              });
+
+              card.appendChild(img);
+              card.appendChild(name);
+
+              gallery.appendChild(card);
+          });
+      }
+
+      loadRockData();
+  });
+
+  // Teachable Machine integration
+  const URL = "https://teachablemachine.withgoogle.com/models/NzfitzWEF/";
+  let model, maxPredictions;
+
+  async function loadModel() {
+      const modelURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+  }
+
+  async function predictImage(image) {
+      const imgElement = document.createElement('img');
+      imgElement.crossOrigin = 'anonymous';
+      imgElement.src = image.src;
+
+      await new Promise(resolve => imgElement.onload = resolve);
+
+      const prediction = await model.predict(imgElement);
+      return prediction;
+  }
+
+  async function analyzeImage() {
+      const displayImage = document.getElementById('display-image');
+      const base64Image = await convertImageToBase64(displayImage.src);
+      sessionStorage.setItem('imageData', base64Image);
+
+      const predictions = await predictImage(displayImage);
+
+      if (predictions.length > 0) {
+          const highestPrediction = predictions.reduce((prev, current) => (prev.probability > current.probability) ? prev : current);
+          const imageName = highestPrediction.className.toLowerCase();
+          displayAnalysisData(imageName);
+          analysisSection.style.display = 'flex';
+      }
+  }
+
+  async function convertImageToBase64(imageUrl) {
+      return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+              const base64String = canvas.toDataURL('image/jpeg');
+              resolve(base64String);
+          };
+          img.onerror = reject;
+          img.src = imageUrl;
+      });
+  }
+
+  function storeImageInSession(imageData) {
+      try {
+          sessionStorage.setItem('selectedImage', imageData);
+      } catch (error) {
+          console.error("Error storing image in session storage:", error);
+      }
+  }
+
+  document.getElementById('analyze-btn').addEventListener('click', function () {
+      const status = document.getElementById('status');
+      const progressBar = document.getElementById('progress-bar');
+      const resultMessage = document.getElementById('result-message');
+      const statusText = document.getElementById('status-text');
+
+      status.style.display = 'flex';
+      resultMessage.style.display = 'none';
+      progressBar.style.width = '0%';
+
+      let progress = 0;
+      const interval = setInterval(async () => {
+          progress += 10;
+          progressBar.style.width = progress + '%';
+
+          if (progress >= 100) {
+              clearInterval(interval);
+              status.style.display = 'none';
+              resultMessage.style.display = 'block';
+
+              await analyzeImage();
+              analysisSection.style.display = 'flex';
+
+              document.getElementById('save-analysis-btn').addEventListener('click', async () => {
+                  const imageNameInput = document.getElementById('image-name-input').value;
+                  const commentInput = document.getElementById('comment-input').value;
+                  const analystName = document.getElementById('analyst-name').value;
+
+                  if (imageNameInput && commentInput && analystName) {
+                      const updateData = {
+                          analyst_name: analystName,
+                          analyst_comment: commentInput,
+                          image_name: imageNameInput
+                      };
+
+                      const rockDataRef = dbRef(database, 'Samples');
+                      const displayName = document.getElementById('display-name').innerText.toLowerCase();
+
+                      const snapshot = await get(child(rockDataRef, '/'));
+                      if (snapshot.exists()) {
+                          const rockData = snapshot.val();
+
+                          for (const key in rockData) {
+                              if (rockData.hasOwnProperty(key)) {
+                                  const sample = rockData[key];
+                                  if (sample.image_name.toLowerCase() === displayName) {
+                                      await update(child(rockDataRef, key), updateData);
+                                      alert("Analysis saved successfully!");
+                                      analysisSection.style.display = 'none';
+                                      break;
+                                  }
+                              }
+                          }
+                      } else {
+                          console.error("No data available to update with analyst input");
+                      }
+                  } else {
+                      alert("Please fill out all fields in the Analyst section.");
+                  }
+              });
+          }
+      }, 1000);
+  });
+
+  function displayAnalysisData(imageName) {
+    console.log("Searching for data with image name:", imageName.toLowerCase());
+    const datasetRef = dbRef(database, 'Dataset'); // Reference to 'Dataset' node in your database
+    
+    get(datasetRef).then(snapshot => {
+        if (snapshot.exists()) {
+            const dataset = snapshot.val();
+            let sample = null;
+
+            // Iterate through the dataset to find the object with a matching type
+            for (const key in dataset) {
+                if (dataset.hasOwnProperty(key)) {
+                    const subdata = dataset[key];
+                    if (subdata.type && subdata.type.toLowerCase() === imageName.toLowerCase()) {
+                        sample = subdata;
+                        break;
+                    }
+                }
+            }
+
+            if (sample) {
+                console.log("Sample found:", sample);
+
+                // Populate the properties container
+                const propertiesContainer = document.getElementById('properties-container');
+                propertiesContainer.innerHTML = `
+                  <h4>ROCK CHARACTERISTICS</h4>
+                  <p><strong>Type:</strong> ${sample.type}  |  <strong>Formation Process:</strong> ${sample.formation_process}</p>
+                  <p><strong>Description:</strong> ${sample.description}</p>
+                  <p><strong>Texture:</strong> ${sample.texture}  |  <strong>Structure:</strong> ${sample.structure}</p>
+                  <p><strong>Mineral Composition:</strong> ${sample.mineral_composition.join(", ")}</p>
+                `;
+
+                // Populate the life support container
+                const lifeSupportContainer = document.getElementById('life-support-container');
+                const lifeSupportYesNo = sample.life_support_potential.percentage >= 50 ? 
+                  `<span style="color: lightgreen;">Yes</span>` : `<span style="color: red;">No</span>`;
+                lifeSupportContainer.innerHTML = `
+                  <h4>Habitability Assessment</h4>
+                  <p><strong>Signs of Water:</strong> ${sample.signs_of_water ? 'Yes' : 'No'}</p>
+                  <p><strong>Potential to support life:</strong> ${lifeSupportYesNo}, with a ${sample.life_support_potential.percentage}% probability</p>
+                  <p><strong>Reason:</strong> ${sample.life_support_potential.description}</p>
+                `;
+            } else {
+                console.log("No matching sample found for the selected image.");
+                alert("No matching data found for the selected image.");
+            }
+        } else {
+            console.log("No data found in the dataset.");
+            alert("No data found in the dataset.");
+        }
+    }).catch(error => {
+        console.error("Error fetching dataset data:", error);
+    });
+}
+
+  loadModel();
 
 
+  async function authenticateAndLoadImage() {
+      try {
+          const EMAIL = "lanre.mohammed23@gmail.com";
+          const PASSWORD = "Wilmar.jr7";
+          const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
+          console.log("User signed in:", userCredential.user);
 
+          const logoImage = document.querySelector('#logo');
+          const logoRef = ref(storage, 'Blazers-Logo.png');
+          const url = await getDownloadURL(logoRef);
+          logoImage.src = url;
+
+      } catch (error) {
+          console.error("Error signing in:", error);
+          alert("Authentication failed.");
+      }
+  }
+
+  loadModel();
+  authenticateAndLoadImage();
 </script>
 
 </body>
