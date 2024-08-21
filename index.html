@@ -9,6 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 
 <link rel="stylesheet" href="./index.css">
@@ -17,7 +19,7 @@
   <div id="projectContainer">
 
     <div id="headerContainer">
-      <img src="" alt="blazers_logo" class="logo" id="logo"/>
+      <img src="./Blazers-Logo.png" alt="blazers_logo" class="logo" id="logo"/>
       <h2>Sample Image Analysis Station</h2>
     </div>
 
@@ -48,6 +50,7 @@
               </div>
           </div>
           <div id="result-message">IMAGE ANALYSIS COMPLETE!</div>
+          <!-- <button id="download-report-btn">Download Report</button> -->
 
       </div>
       
@@ -74,339 +77,6 @@
 
   </div>
 
-  <!-- <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
-    import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
-    import { getDatabase, ref as dbRef, child, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
-    
-
-
-    // Web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyA6c_4j2Zw33NdlP2jSbIp0ySHGSmpluQ8",
-      authDomain: "blazers-rovers-sample-database.firebaseapp.com",
-      projectId: "blazers-rovers-sample-database",
-      storageBucket: "blazers-rovers-sample-database.appspot.com",
-      messagingSenderId: "464730486363",
-      appId: "1:464730486363:web:78ccfde176cea53e21317e"
-    };
-
-    
-
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const storage = getStorage(app);
-    const database = getDatabase(app);
-
-    const analysisSection = document.getElementById('analysis-section');
-
-  // Hide the analysis section initially
-  analysisSection.style.display = 'none';
-
-    document.addEventListener('DOMContentLoaded', function () {
-      const gallery = document.getElementById('rock-gallery');
-      const displayImage = document.getElementById('display-image');
-      const displayName = document.getElementById('display-name');
-      
-      // Function to load rock data from Firebase Realtime Database
-      async function loadRockData() {
-        const auth = getAuth();
-        const email = "lanre.mohammed23@gmail.com"; // Replace with the actual user email
-        const password = "Wilmar.jr7"; // Replace with the actual user password
-    
-        try {
-            // Authenticate the user first
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    
-            // If authentication is successful, proceed with loading the rock data
-            const rockDataRef = dbRef(database, 'Samples'); // Reference to 'Samples' node in your database
-            const snapshot = await get(child(rockDataRef, '/'));
-    
-            if (snapshot.exists()) {
-                const rockData = snapshot.val();
-                displayRockGallery(rockData); // Call your function to display the data
-            } else {
-                console.error("No data available");
-            }
-        } catch (error) {
-            console.error("Error during authentication or fetching rock data:", error);
-        }
-    }
-    
-
-  // Function to display the rock gallery
-  function displayRockGallery(rockData) {
-      const gallery = document.getElementById('rock-gallery');
-      const displayImage = document.getElementById('display-image');
-      const displayName = document.getElementById('display-name');
-
-      rockData.forEach(imgData => {
-          const card = document.createElement('div');
-          card.className = 'image-card';
-
-          const img = document.createElement('img');
-          img.src = imgData.image;
-
-          const name = document.createElement('div');
-          name.className = 'image-name';
-          name.innerText = imgData.image_name;
-
-          // Add click event listener to the card
-          card.addEventListener('click', () => {
-
-            analysisSection.style.display = 'none';
-              // Update display box with the clicked image and name
-              displayImage.src = imgData.image;
-              displayName.innerText = imgData.image_name;
-
-              // Clear session storage and store new image data
-            sessionStorage.clear();
-            storeImageInSession(displayImage.src);
-          });
-
-          card.appendChild(img);
-          card.appendChild(name);
-
-          gallery.appendChild(card);
-      });
-  }
-
-  loadRockData();
-
-    });
-
-
-  // Teachable Machine integration
-  const URL = "https://teachablemachine.withgoogle.com/models/NzfitzWEF/";
-  let model, maxPredictions;
-
-  async function loadModel() {
-    const modelURL = URL + "model.json";
-    const metadataURL = URL + "metadata.json";
-    model = await tmImage.load(modelURL, metadataURL);
-    maxPredictions = model.getTotalClasses();
-  }
-
-  async function predictImage(image) {
-    // Ensure image is loaded and accessible
-    const imgElement = document.createElement('img');
-    imgElement.crossOrigin = 'anonymous';  // Handle cross-origin
-    imgElement.src = image.src;
-
-    await new Promise(resolve => imgElement.onload = resolve);
-
-    const prediction = await model.predict(imgElement);
-    return prediction;
-  }
-
-  async function analyzeImage() {
-    const displayImage = document.getElementById('display-image');
-    
-    // Convert image to Base64 and store it in session storage
-    const base64Image = await convertImageToBase64(displayImage.src);
-    sessionStorage.setItem('imageData', base64Image);
-
-    const predictions = await predictImage(displayImage);
-    
-    if (predictions.length > 0) {
-      const highestPrediction = predictions.reduce((prev, current) => (prev.probability > current.probability) ? prev : current);
-      const imageName = highestPrediction.className.toLowerCase();
-      console.log(highestPrediction)
-      console.log(imageName);
-      displayAnalysisData(imageName);
-      analysisSection.style.display = 'flex';
-    }
-  }
-
-  async function convertImageToBase64(imageUrl) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const base64String = canvas.toDataURL('image/jpeg');
-        resolve(base64String);
-      };
-      img.onerror = reject;
-      img.src = imageUrl;
-    });
-  }
-
-  function storeImageInSession(imageData) {
-    try {
-      // Store the image data in session storage
-      sessionStorage.setItem('selectedImage', imageData);
-    } catch (error) {
-      console.error("Error storing image in session storage:", error);
-    }
-  }
-  
-
-  document.getElementById('analyze-btn').addEventListener('click', function () {
-    const status = document.getElementById('status');
-    const progressBar = document.getElementById('progress-bar');
-    const resultMessage = document.getElementById('result-message');
-    const statusText = document.getElementById('status-text');
-
-    status.style.display = 'flex';
-    resultMessage.style.display = 'none';
-    progressBar.style.width = '0%';
-
-    let progress = 0;
-    const interval = setInterval(async () => {
-        progress += 10;
-        progressBar.style.width = progress + '%';
-
-        if (progress >= 100) {
-            clearInterval(interval);
-            status.style.display = 'none';
-            resultMessage.style.display = 'block';
-
-            // Analyze the selected image
-            await analyzeImage();
-
-            // Show the analysis section
-            analysisSection.style.display = 'flex';
-
-            // Save analyst's input to the database
-            document.getElementById('save-analysis-btn').addEventListener('click', async () => {
-                const imageNameInput = document.getElementById('image-name-input').value;
-                const commentInput = document.getElementById('comment-input').value;
-                const analystName = document.getElementById('analyst-name').value;
-
-                if (imageNameInput && commentInput && analystName) {
-                    const updateData = {
-                        analyst_name: analystName,
-                        analyst_comment: commentInput,
-                        image_name: imageNameInput
-                    };
-
-                    const rockDataRef = dbRef(database, 'Samples'); // Reference to 'Samples' node in your database
-                    const displayName = document.getElementById('display-name').innerText.toLowerCase();
-
-                    const snapshot = await get(child(rockDataRef, '/'));
-                    if (snapshot.exists()) {
-                        const rockData = snapshot.val();
-
-                        for (const key in rockData) {
-                            if (rockData.hasOwnProperty(key)) {
-                                const sample = rockData[key];
-
-                                // Update the database with analyst input
-                                if (sample.image_name.toLowerCase() === displayName) {
-                                    await update(child(rockDataRef, key), updateData);
-                                    alert("Analysis saved successfully!");
-                                    analysisSection.style.display = 'none';
-                                    break;
-                                }
-                            }
-                        }
-                    } else {
-                        console.error("No data available to update with analyst input");
-                    }
-                } else {
-                    alert("Please fill out all fields in the Analyst section.");
-                }
-            });
-        }
-    }, 1000);
-});
-
-
-  // Load the Teachable Machine model when the page loads
-  loadModel();
-
-  function displayAnalysisData(imageName) {
-    console.log("Searching for data with image name:", imageName.toLowerCase());
-    const datasetRef = dbRef(database, 'Dataset'); // Reference to 'Dataset' node in your database
-    
-    get(datasetRef).then(snapshot => {
-        if (snapshot.exists()) {
-            const dataset = snapshot.val();
-            let sample = null;
-
-            // Iterate through the dataset to find the object with a matching type
-            for (const key in dataset) {
-                if (dataset.hasOwnProperty(key)) {
-                    const subdata = dataset[key];
-                    if (subdata.type && subdata.type.toLowerCase() === imageName.toLowerCase()) {
-                        sample = subdata;
-                        break;
-                    }
-                }
-            }
-
-            if (sample) {
-                console.log("Sample found:", sample);
-
-                // Populate the properties container
-                const propertiesContainer = document.getElementById('properties-container');
-                propertiesContainer.innerHTML = `
-                  <h4>ROCK CHARACTERISTICS</h4>
-                  <p><strong>Type:</strong> ${sample.type}  |  <strong>Formation Process:</strong> ${sample.formation_process}</p>
-                  <p><strong>Description:</strong> ${sample.description}</p>
-                  <p><strong>Texture:</strong> ${sample.texture}  |  <strong>Structure:</strong> ${sample.structure}</p>
-                  <p><strong>Mineral Composition:</strong> ${sample.mineral_composition.join(", ")}</p>
-                `;
-
-                // Populate the life support container
-                const lifeSupportContainer = document.getElementById('life-support-container');
-                const lifeSupportYesNo = sample.life_support_potential.percentage >= 50 ? 
-                  `<span style="color: lightgreen;">Yes</span>` : `<span style="color: red;">No</span>`;
-                lifeSupportContainer.innerHTML = `
-                  <h4>Habitability Assessment</h4>
-                  <p><strong>Signs of Water:</strong> ${sample.signs_of_water ? 'Yes' : 'No'}</p>
-                  <p><strong>Potential to support life:</strong> ${lifeSupportYesNo}, with a ${sample.life_support_potential.percentage}% probability</p>
-                  <p><strong>Reason:</strong> ${sample.life_support_potential.description}</p>
-                `;
-            } else {
-                console.log("No matching sample found for the selected image.");
-                alert("No matching data found for the selected image.");
-            }
-        } else {
-            console.log("No data found in the dataset.");
-            alert("No data found in the dataset.");
-        }
-    }).catch(error => {
-        console.error("Error fetching dataset data:", error);
-    });
-}
-
-// Constants for email and password
-const EMAIL = "lanre.mohammed23@gmail.com";
-const PASSWORD = "Wilmar.jr7";
-
-// Function to authenticate and display image
-async function authenticateAndLoadImage() {
-  try {
-    // Sign in with email and password
-    const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
-    console.log("User signed in:", userCredential.user);
-
-    // Load the logo image after successful login
-    const logoImage = document.querySelector('#logo');
-    const logoRef = ref(storage, 'Blazers-Logo.png');
-    const url = await getDownloadURL(logoRef);
-    logoImage.src = url;
-
-
-  } catch (error) {
-    console.error("Error signing in:", error);
-    alert("Authentication failed.");
-  }
-}
-
-loadModel();
-authenticateAndLoadImage();
-
-
-</script> -->
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
@@ -585,6 +255,7 @@ authenticateAndLoadImage();
               status.style.display = 'none';
               resultMessage.style.display = 'block';
 
+
               await analyzeImage();
               analysisSection.style.display = 'flex';
 
@@ -613,6 +284,7 @@ authenticateAndLoadImage();
                                   if (sample.image_name.toLowerCase() === displayName) {
                                       await update(child(rockDataRef, key), updateData);
                                       alert("Analysis saved successfully!");
+                                      generatePDFReport();
                                       analysisSection.style.display = 'none';
                                       break;
                                   }
@@ -628,6 +300,7 @@ authenticateAndLoadImage();
           }
       }, 1000);
   });
+
 
   function displayAnalysisData(imageName) {
     console.log("Searching for data with image name:", imageName.toLowerCase());
@@ -687,27 +360,172 @@ authenticateAndLoadImage();
 
   loadModel();
 
+  function generatePDFReport() {
+    // Get the data to include in the report
+    const analysisImageSrc = document.getElementById('display-image').src;
+    const rockCharacteristics = document.getElementById('properties-container').innerText;
+    const habitabilityAssessment = document.getElementById('life-support-container').innerText;
+    const analystComment = document.getElementById('comment-input').value;
+    const analystName = document.getElementById('analyst-name').value;
+    const imageNameInput = document.getElementById('image-name-input').value;
+    const logoImageSrc = './Blazers-Logo.png'; // Path to your logo
 
-  async function authenticateAndLoadImage() {
-      try {
-          const EMAIL = "lanre.mohammed23@gmail.com";
-          const PASSWORD = "Wilmar.jr7";
-          const userCredential = await signInWithEmailAndPassword(auth, EMAIL, PASSWORD);
-          console.log("User signed in:", userCredential.user);
+    // Create the HTML structure dynamically
+    const reportContainer = document.createElement('div');
+    reportContainer.className = 'report-container';
 
-          const logoImage = document.querySelector('#logo');
-          const logoRef = ref(storage, 'Blazers-Logo.png');
-          const url = await getDownloadURL(logoRef);
-          logoImage.src = url;
+    // Letterhead section
+    const letterhead = document.createElement('div');
+    letterhead.className = 'letterhead';
 
-      } catch (error) {
-          console.error("Error signing in:", error);
-          alert("Authentication failed.");
-      }
-  }
+    const logoSection = document.createElement('div');
+    logoSection.className = 'logo-section';
+    const logoImg = document.createElement('img');
+    logoImg.src = logoImageSrc;
+    logoSection.appendChild(logoImg);
+
+    const textSection = document.createElement('div');
+    textSection.className = 'text-section';
+    const title = document.createElement('h1');
+    title.innerText = 'Mars Rover Image Analysis Report';
+    textSection.appendChild(title);
+
+    letterhead.appendChild(logoSection);
+    letterhead.appendChild(textSection);
+
+    // Sample Details section
+    const reportSection1 = document.createElement('div');
+    reportSection1.className = 'report-section';
+    const sampleDetailsTitle = document.createElement('h2');
+    sampleDetailsTitle.innerText = 'Sample Details';
+    const togetherDiv = document.createElement('div');
+    togetherDiv.className = 'together';
+    const sampleName = document.createElement('p');
+    sampleName.innerHTML = `<b>Sample Name: </b> ${imageNameInput}`;
+    const dateCaptured = document.createElement('p');
+    dateCaptured.className = 'date';
+    dateCaptured.innerHTML = `<b>Date Captured: </b><span>${new Date().toLocaleDateString()}</span>`;
+    togetherDiv.appendChild(sampleName);
+    togetherDiv.appendChild(dateCaptured);
+
+    // Create a placeholder for the sample image
+    const sampleImage = document.createElement('img');
+    sampleImage.id = imageNameInput; // Assign an ID based on the image name
+    const sampleCaption = document.createElement('i');
+    sampleCaption.innerText = `Fig.1 ${imageNameInput}_Sample`;
+
+    reportSection1.appendChild(sampleDetailsTitle);
+    reportSection1.appendChild(togetherDiv);
+    reportSection1.appendChild(sampleImage);
+    reportSection1.appendChild(sampleCaption);
+
+    // Analysis Results section
+    const reportSection2 = document.createElement('div');
+    reportSection2.className = 'report-section';
+    const analysisResultsTitle = document.createElement('h2');
+    analysisResultsTitle.innerText = 'Analysis Results';
+    const rockCharacteristicsP = document.createElement('p');
+    rockCharacteristicsP.innerText = rockCharacteristics;
+    const habitabilityAssessmentP = document.createElement('p');
+    habitabilityAssessmentP.innerText = habitabilityAssessment;
+
+    reportSection2.appendChild(analysisResultsTitle);
+    reportSection2.appendChild(rockCharacteristicsP);
+    reportSection2.appendChild(habitabilityAssessmentP);
+
+    // Analyst Information section
+    const reportSection3 = document.createElement('div');
+    reportSection3.className = 'report-section';
+    const analystInfoTitle = document.createElement('h2');
+    analystInfoTitle.innerText = 'Analyst Information';
+    const analystCommentP = document.createElement('p');
+    analystCommentP.innerHTML = `<b>Analyst Comment: </b>${analystComment}`;
+    const analystNameP = document.createElement('p');
+    analystNameP.innerHTML = `<b>Analyst Name: </b>${analystName}`;
+
+    reportSection3.appendChild(analystInfoTitle);
+    reportSection3.appendChild(analystCommentP);
+    reportSection3.appendChild(analystNameP);
+
+    // Signature line section
+    const signatureLine = document.createElement('div');
+    signatureLine.className = 'signature-line';
+    const signatureTitle = document.createElement('p');
+    signatureTitle.innerText = 'Signature:';
+    const signatureLineHr = document.createElement('hr');
+    signatureLine.appendChild(signatureTitle);
+    signatureLine.appendChild(signatureLineHr);
+
+    // Footer section
+    const footer = document.createElement('footer');
+    footer.innerHTML = 'Gale Crater Research Station, Latitude -5.4, Longitude 137.8, Mars. blazersteam@gmail.com';
+
+    // Append all sections to the report container
+    reportContainer.appendChild(letterhead);
+    reportContainer.appendChild(reportSection1);
+    reportContainer.appendChild(reportSection2);
+    reportContainer.appendChild(reportSection3);
+    reportContainer.appendChild(signatureLine);
+    reportContainer.appendChild(footer);
+
+    // Add the report container to the document body (for rendering)
+    document.body.appendChild(reportContainer);
+
+    // Convert the analysis image to Base64 and generate the PDF
+    convertToBase64(analysisImageSrc).then(base64Image => {
+        sampleImage.src = base64Image; // Set the sample image source
+
+        html2canvas(reportContainer, { scale: 2 }).then(canvas => {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+
+            const imgWidth = 210; // A4 width in mm
+            const pageHeight = 295; // A4 height in mm
+            const imgHeight = canvas.height * imgWidth / canvas.width;
+            const heightLeft = imgHeight - pageHeight;
+
+            let position = 0;
+
+            pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, position, imgWidth, imgHeight);
+
+            if (heightLeft > 0) {
+                pdf.addPage();
+                pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, -pageHeight, imgWidth, imgHeight);
+            }
+
+            pdf.save(`${imageNameInput}_Image_Analysis_Report.pdf`);
+
+            // Clean up the dynamically created content
+            document.body.removeChild(reportContainer);
+        }).catch(error => {
+            console.error("Error generating PDF:", error);
+        });
+    }).catch(error => {
+        console.error("Error converting image to Base64:", error);
+    });
+}
+
+// Helper function to convert image URL to Base64
+function convertToBase64(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous'; // To avoid CORS issues
+        img.src = url;
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const dataURL = canvas.toDataURL('image/jpeg');
+            resolve(dataURL);
+        };
+        img.onerror = error => reject(error);
+    });
+}
 
   loadModel();
-  authenticateAndLoadImage();
+
 </script>
 
 </body>

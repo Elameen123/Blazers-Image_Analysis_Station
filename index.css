@@ -368,3 +368,136 @@
   }
   
 }
+
+
+.report-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  border-radius: 8px;
+  background: #ffffff;
+ 
+}
+.letterhead {
+  display: flex;
+  width: 100%;
+  height: 6.25rem; /* Adjust height as needed */
+  background-color: rgb(0, 0, 59);
+  color: whitesmoke;
+  align-items: center;
+}
+.logo-section {
+  width: 25%;
+  height: 100%;
+  background: orangered;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  box-sizing: border-box;
+  border-top-right-radius: 50% 35%;
+  border-bottom-right-radius: 50% 35%;
+
+}
+.logo-section img {
+  max-width: 80%; /* Adjust as needed */
+  height: auto;
+}
+
+.text-section {
+  width: 70%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2.5px 10px;
+  box-sizing: border-box;
+}
+
+.text-section h1 {
+  font-size: 28px;
+  margin: 0;
+  text-align: center;
+}
+
+.text-section p.date {
+  font-size: 14px;
+  text-align: center;
+  margin-top: 10px;
+}
+
+.report-section {
+  padding: 12px 20px;
+  width: calc(100% - 40px);
+}
+
+.report-section h2 {
+  font-size: 1.25rem;
+  margin-bottom: 5px;
+  border-bottom: 2px solid #004d99;
+  padding-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.report-section p {
+  font-size: 14px;
+  margin-bottom: 5px;
+  line-height: 1.5;
+}
+
+.report-section img {
+  width: 60%;
+  height: 15rem;
+  margin: 0.5rem 20%;
+}
+
+.report-section i {
+  font-size: small;
+  text-align: center;
+  justify-self: center;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.signature-line {
+  text-align: left;
+  margin-left: 20px;
+}
+
+.signature-line p {
+  margin-bottom: 10px;
+  font-size: 16px;
+  font-weight: bold;
+}
+.signature-line hr {
+  width: 50%;
+  margin: 0 0 30px 0;
+  border: 1px solid #004d99;
+}
+
+footer {
+background-color: rgb(0, 0, 59);
+color: whitesmoke;
+text-align: center;
+width: 100%;
+height: 2rem;
+display: flex;
+justify-content: center;
+align-items: center;
+font-size: small;
+}
+
+#mudstone {
+  width: 100%;
+  height: 8rem;
+  align-self: center;
+  border: 2px solid rgb(0, 0, 59);
+}
+
+.together {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
