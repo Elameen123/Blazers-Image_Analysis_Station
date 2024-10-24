@@ -12,6 +12,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+<!-- Load Font Awesome from CDN -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+
 
 <link rel="stylesheet" href="./index.css">
 </head>
@@ -31,10 +35,29 @@
         </div>
 
         <div id="singlePickout">
+            <header>
+                  <span id="toggleText" class="toggle-text">Exploration Mode</span>
+                  <label class="switch">
+                    <input type="checkbox" id="toggleMode">
+                    <span class="slider round"></span>
+                  </label>
+            </header>
           <img id="display-image" src="" alt="Selected Image" />
-          <h3 id="display-name">Selected Image Name</h3>
-          <button type="submit" id="analyze-btn">Analyze</button>
+          <div id="stream">
+            
+            <video id="webcam" autoplay></video>
+          </div>
+          <i id="camera-icon" class="fas fa-camera"></i>
+          <div id="depth-display">
+            
+          </div>
+          <div class="selectedImage_box">
+            <h3 id="display-name">Selected Image Name</h3>
+            <button type="submit" id="analyze-btn">Analyze</button>
+          </div>
         </div>
+
+        <canvas id="screenshot-canvas" style="display:none;"></canvas>
     </div>
 
     <div id="analysisContainer">
@@ -81,7 +104,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
-  import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
+  import { getStorage, ref, getDownloadURL, uploadBytes } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
   import { getDatabase, ref as dbRef, child, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
   
   const firebaseConfig = {
@@ -108,25 +131,45 @@
       const displayName = document.getElementById('display-name');
     
       async function loadRockData() {
-          const auth = getAuth();
-          const email = "lanre.mohammed23@gmail.com";
-          const password = "Wilmar.jr7";
-  
-          try {
-              const userCredential = await signInWithEmailAndPassword(auth, email, password);
-              const rockDataRef = dbRef(database, 'Samples');
-              const snapshot = await get(child(rockDataRef, '/'));
-  
-              if (snapshot.exists()) {
-                  const rockData = snapshot.val();
-                  displayRockGallery(rockData);
-              } else {
-                  console.error("No data available");
-              }
-          } catch (error) {
-              console.error("Error during authentication or fetching rock data:", error);
-          }
-      }
+        const auth = getAuth();
+        const email = "lanre.mohammed23@gmail.com";
+        const password = "Wilmar.jr7";
+    
+        try {
+            // Sign in the user to authenticate access to the database
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            console.log("User signed in successfully");
+    
+            // Reference to the 'Samples' node in your database
+            const rockDataRef = dbRef(database, 'Mars');
+            
+            // Fetch all child nodes from the 'Samples' node
+            const snapshot = await get(child(rockDataRef, '/'));
+    
+            // Check if the snapshot contains data
+            if (snapshot.exists()) {
+                const rockData = snapshot.val();
+                
+                // Process each child node, ensuring all keys (short and long) are handled
+                const processedData = {};
+                snapshot.forEach((childSnapshot) => {
+                    const key = childSnapshot.key;  // This captures the key, regardless of its format
+                    const data = childSnapshot.val();
+                    
+                    // Add the data to the processedData object using the key
+                    processedData[key] = data;
+                });
+    
+                console.log(processedData);
+                displayRockGallery(processedData);  // Pass processed data to display function
+            } else {
+                console.error("No data available");
+            }
+        } catch (error) {
+            console.error("Error during authentication or fetching rock data:", error);
+        }
+    }
+    
 
       function displayRockGallery(rockData) {
           const gallery = document.getElementById('rock-gallery');
@@ -277,6 +320,7 @@
                       const snapshot = await get(child(rockDataRef, '/'));
                       if (snapshot.exists()) {
                           const rockData = snapshot.val();
+                          console.log(rockData);
 
                           for (const key in rockData) {
                               if (rockData.hasOwnProperty(key)) {
@@ -525,6 +569,211 @@ function convertToBase64(url) {
 }
 
   loadModel();
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('screenshot-canvas');  // New canvas for drawing rectangles
+    const cameraIcon = document.getElementById('camera-icon');
+    const depthDisplay = document.getElementById('depth-display');
+    const toggleMode = document.getElementById('toggleMode');
+    const toggleText = document.getElementById('toggleText');
+    const imageBox = document.querySelector('.selectedImage_box');
+    const stream = document.getElementById('stream');
+    const imageDisplay = document.getElementById('display-image');
+    const URL = "https://teachablemachine.withgoogle.com/models/Dbr_PAf4S/"; // Teachable Machine model URL
+
+    let model, maxPredictions;
+
+    // Function to switch to Exploration Mode
+    function switchToExplorationMode() {
+        toggleText.innerText = "Exploration Mode";  // Update the label text
+        depthDisplay.style.display = "flex";
+        cameraIcon.style.display = "flex";
+        video.style.display = "flex";
+        stream.style.display = "flex";
+        imageBox.style.display = "none";
+        imageDisplay.style.display = "none";
+         // Show detection canvas
+    }
+
+    // Function to switch to Analysis Mode
+    function switchToAnalysisMode() {
+        toggleText.innerText = "Analysis Mode";  // Update the label text
+        depthDisplay.style.display = "none";
+        cameraIcon.style.display = "none";
+        video.style.display = "none";
+        stream.style.display = "none";
+        imageBox.style.display = "flex";
+        imageDisplay.style.display = "flex";
+         // Hide detection canvas
+    }
+
+    // Event listener for the checkbox
+    toggleMode.addEventListener('change', function() {
+        if (toggleMode.checked) {
+            switchToExplorationMode();
+        } else {
+            switchToAnalysisMode();
+        }
+    });
+
+    // Initialize the page in Analysis Mode (since the checkbox is unchecked by default)
+    switchToAnalysisMode();  // By default, start in Analysis Mode
+
+    // ********** 1. Webcam Stream Functionality ********** //
+    function startWebcam() {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(stream) {
+                    video.srcObject = stream;
+                    video.addEventListener('loadedmetadata', function() {
+                        console.log('Video metadata loaded');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                    });
+                })
+                .catch(function(error) {
+                    console.error('Error accessing webcam:', error);
+                });
+        } else {
+            alert('Webcam not supported by your browser.');
+        }
+    }
+
+    // ********** 2. Teachable Machine Model Integration ********** //
+    async function initTeachableMachineModel() {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        window.requestAnimationFrame(predictLoop);
+    }
+
+    async function predictLoop() {
+        await predict();
+        window.requestAnimationFrame(predictLoop);
+    }
+
+    async function predict() {
+        const prediction = await model.predict(video);
+        let objectDetected = false;
+        for (let i = 0; i < maxPredictions; i++) {
+            const classPrediction = `${prediction[i].className}: ${prediction[i].probability.toFixed(2)}`;
+    
+            // Check for specific objects
+            if (prediction[i].probability > 0.8) {
+                objectDetected = true;
+                const detectedObject = prediction[i].className;
+                const depth = await sendScreenshotToPython(detectedObject);  // Simulating depth response
+                //takeScreenshot(detectedObject, depth);
+                //console.log("Object Detected, Take Screenshot");
+                //drawRectangleOnVideo(detectedObject);  // Draw the rectangle
+                updateDisplay(detectedObject, depth);
+            }
+        }
+        // Change the camera icon to red if an object is detected
+        if (objectDetected) {
+            cameraIcon.style.color = "red";
+        } else {
+            cameraIcon.style.color = "white";
+            depthDisplay.innerText = "";
+              // Reset to default color when no object is detected
+        }
+    }
+
+    // ********** 3. Screenshot Functionality ********** //
+    async function takeScreenshot(objectDetected = "Manual", depth = 1.5) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(async (blob) => {
+            if (blob) {
+                console.log("Screenshot taken");
+                 // Create a storage reference
+                 const timestamp = Date.now();
+                 const storageRef = ref(storage, `TEST_SAMPLES/screenshot_${timestamp}.png`);
+ 
+                 // Upload the blob to Firebase Storage
+                 await uploadBytes(storageRef, blob);
+ 
+                 // Get the download URL
+                 const downloadURL = await getDownloadURL(storageRef);
+ 
+                // Send the blob to the Python service for depth estimation
+                await updateDatabaseWithImage(downloadURL, depth, objectDetected);
+            } else {
+                console.error('Failed to convert canvas to Blob.');
+            }
+        }, 'image/png');
+    }
+
+    // ********** 4. Display Update Function ********** //
+    function updateDisplay(material, depth) {
+        // Update the 'depthDisplay' paragraph and the 'objectResult' div
+        depthDisplay.innerText = `Detected Material: ${material}, Estimated Depth: ${depth.toFixed(2)} meters`;
+    }
+
+    // ********** 5. Drawing Rectangle Around Detected Object ********** //
+    function drawRectangleOnVideo(detectedObject) {
+        canvas.style.display = 'block';
+        const ctx = canvas.getContext('2d');
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+
+        // Clear previous drawings
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw a green rectangle in the center of the video (adjust if object detection provides coordinates)
+        const rectWidth = width / 4;
+        const rectHeight = height / 4;
+        const rectX = (width - rectWidth) / 2;
+        const rectY = (height - rectHeight) / 2;
+
+        ctx.strokeStyle = 'green';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+
+        // Optionally, display detected object text
+        ctx.fillStyle = 'green';
+        ctx.font = '20px Arial';
+        ctx.fillText(detectedObject, rectX, rectY - 10);
+    }
+
+    // ********** 6. Backend Communication and Database Updates ********** //
+    async function sendScreenshotToPython(objectDetected) {
+        // Simulated depth value, replace with backend call if necessary
+        return 1.5;  // Placeholder for depth, call Python backend here
+    }
+
+    async function updateDatabaseWithImage(blob, depth, objectDetected) {
+        const userCredential = await signInWithEmailAndPassword(auth, 'lanre.mohammed23@gmail.com', 'Wilmar.jr7');
+        
+        // Reference to the database where you want to store the image URL
+        const videoImageRef = dbRef(database, 'Mars/');
+
+        // Assuming you want to push a new entry to the 'Samples' node
+        await update(child(videoImageRef, Date.now().toString()), {
+            object: objectDetected,
+            image_name: `screenshot_${Date.now()}`,
+            image: blob,
+            timestamp: Date.now(),
+            depth: depth,// Optional: add a timestamp or any other data you need
+        });
+        
+        console.log('Database updated with image, depth, and material.');
+    }
+
+    // ********** 7. Event Listeners ********** //
+    startWebcam();
+    initTeachableMachineModel();
+
+    cameraIcon.addEventListener('click', () => takeScreenshot("Manual"));
+});
+
 
 </script>
 

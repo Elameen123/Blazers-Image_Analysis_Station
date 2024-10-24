@@ -97,33 +97,144 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  position: relative;
+  /* border: 1px solid green; */
 }
+
+#singlePickout header {
+  width: 100%;
+  height: 2.5rem;
+  background-color: rgb(31, 56, 77);
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+  color: lightblue;
+}
+
+/* toggle style  */
+/* The switch - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+  margin-left: 1rem;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(26px);
+  -ms-transform: translateX(26px);
+  transform: translateX(26px);
+}
+
+/* Rounded sliders */
+.slider.round {
+  border-radius: 34px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* toggle style ends */
 
 #pictureContainer #singlePickout img {
   width: 70%;
-  height: 60%;
+  height: 65%;
   border: 5px solid rgb(54, 62, 70);
   border-radius: 5px;
+  
+}
+
+#pictureContainer #singlePickout #stream {
+  width: 80%;
+  height: 70%;
+  border: 5px solid rgb(54, 62, 70);
+  border-radius: 5px;
+  
+}
+
+#webcam {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: relative;
+}
+
+/* Updated style for Font Awesome icon */
+#camera-icon {
+  position: absolute;
+  top:13.5%;
+  left: 12%;
+  font-size: 2rem;
+  color: white;
+  cursor: pointer;
+  z-index: 10;
+}
+
+#camera-icon:hover {
+  color: lightgreen;
 }
 
 
 #pictureContainer #singlePickout h3 {
-  color: whitesmoke;
-  font-size: 1.5rem;
-  margin: 0.5rem 0;
+  color: skyblue;
+  font-size: 1.2rem;
+  text-align: center;
 }
 
 #pictureContainer #singlePickout button {
+  width: 30%;
   color: #031B28;
   background-color: white;
-  border-radius: 5px;
-  padding: 0.5rem 1rem;
+  padding: 0.75rem 1.5rem;
   border: 2px solid white;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 1.1rem;
   font-weight: bold;
-  margin: 0.5rem 0;
 }
 
 #analysisContainer{
@@ -259,6 +370,46 @@
   text-transform: uppercase;
 }
 
+.selectedImage_box {
+  width: 95%;
+  height: 3.5rem;
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: left;
+  align-items: center;
+  border: 1px solid whitesmoke;
+}
+
+#depth-display {
+  width: 95%;
+  height: 3.5rem;
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  color: lawngreen;
+  font-size: 0.9rem;
+  font-family: 'Courier New', Courier, monospace;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid whitesmoke;
+}
+
+.selectedImage_box #display-name {
+  width: 70%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+}
+
+.selectedImage_box #analyse-btn {
+  width: 30%;
+  height: 100%;
+  border-radius: none;
+}
+
 #display-image {
   background-color: #ccc;
 }
@@ -369,7 +520,6 @@
   
 }
 
-
 .report-container {
   width: 100%;
   max-width: 800px;
@@ -472,7 +622,7 @@
 }
 .signature-line hr {
   width: 50%;
-  margin: 0 0 13.5px 0;
+  margin: 0 0 12px 0;
   border: 1px solid #004d99;
 }
 
