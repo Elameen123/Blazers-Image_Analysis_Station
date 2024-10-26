@@ -105,7 +105,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
   import { getStorage, ref, getDownloadURL, uploadBytes } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
-  import { getDatabase, ref as dbRef, child, get, update } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+  import { getDatabase, ref as dbRef, child, get, update, onValue } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
   
   const firebaseConfig = {
     apiKey: "AIzaSyA6c_4j2Zw33NdlP2jSbIp0ySHGSmpluQ8",
@@ -143,32 +143,35 @@
             // Reference to the 'Samples' node in your database
             const rockDataRef = dbRef(database, 'Mars');
             
-            // Fetch all child nodes from the 'Samples' node
-            const snapshot = await get(child(rockDataRef, '/'));
+            // Use onValue for real-time updates
+            onValue(child(rockDataRef, '/'), (snapshot) => {
+                // Check if the snapshot contains data
+                if (snapshot.exists()) {
+                    const rockData = snapshot.val();
     
-            // Check if the snapshot contains data
-            if (snapshot.exists()) {
-                const rockData = snapshot.val();
-                
-                // Process each child node, ensuring all keys (short and long) are handled
-                const processedData = {};
-                snapshot.forEach((childSnapshot) => {
-                    const key = childSnapshot.key;  // This captures the key, regardless of its format
-                    const data = childSnapshot.val();
-                    
-                    // Add the data to the processedData object using the key
-                    processedData[key] = data;
-                });
+                    // Process each child node, ensuring all keys (short and long) are handled
+                    const processedData = {};
+                    snapshot.forEach((childSnapshot) => {
+                        const key = childSnapshot.key;  // This captures the key, regardless of its format
+                        const data = childSnapshot.val();
     
-                console.log(processedData);
-                displayRockGallery(processedData);  // Pass processed data to display function
-            } else {
-                console.error("No data available");
-            }
+                        // Add the data to the processedData object using the key
+                        processedData[key] = data;
+                    });
+    
+                    console.log(processedData);
+                    displayRockGallery(processedData);  // Pass processed data to display function
+                } else {
+                    console.error("No data available");
+                }
+            }, (error) => {
+                console.error("Error fetching data in real-time:", error);
+            });
         } catch (error) {
             console.error("Error during authentication or fetching rock data:", error);
         }
     }
+    
     
 
       function displayRockGallery(rockData) {
@@ -580,7 +583,7 @@ function convertToBase64(url) {
     const imageBox = document.querySelector('.selectedImage_box');
     const stream = document.getElementById('stream');
     const imageDisplay = document.getElementById('display-image');
-    const URL = "https://teachablemachine.withgoogle.com/models/Dbr_PAf4S/"; // Teachable Machine model URL
+    const URL = "https://teachablemachine.withgoogle.com/models/cPkoUO3KA/"; // Teachable Machine model URL
 
     let model, maxPredictions;
 
@@ -622,23 +625,51 @@ function convertToBase64(url) {
 
     // ********** 1. Webcam Stream Functionality ********** //
     function startWebcam() {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(function(stream) {
+        const video = document.getElementById('webcam'); // Assumes a <video> element with id="webcam"
+        const canvas = document.getElementById('detection-canvas'); // Assumes a <canvas> element with id="detection-canvas"
+        const esp32CamIP = "<ESP32_CAM_IP>"; // Replace with your ESP32-CAM IP address
+    
+        function startESP32CamStream() {
+            return new Promise((resolve, reject) => {
+                // Attempt to connect to the ESP32-CAM feed
+                video.src = `http://${esp32CamIP}:81/stream`;
+                video.play();
+    
+                // If the ESP32-CAM stream loads, resolve the promise
+                video.addEventListener('loadeddata', () => resolve(true), { once: true });
+    
+                // Timeout to reject the promise if ESP32-CAM feed isn't available within 5 seconds
+                setTimeout(() => reject(false), 5000); // Adjust timeout as needed
+            });
+        }
+    
+        async function startFallbackWebcam() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                     video.srcObject = stream;
                     video.addEventListener('loadedmetadata', function() {
-                        console.log('Video metadata loaded');
+                        console.log('Webcam metadata loaded');
                         canvas.width = video.videoWidth;
                         canvas.height = video.videoHeight;
                     });
-                })
-                .catch(function(error) {
+                } catch (error) {
                     console.error('Error accessing webcam:', error);
-                });
-        } else {
-            alert('Webcam not supported by your browser.');
+                }
+            } else {
+                alert('Webcam not supported by your browser.');
+            }
         }
+    
+        // Try to start ESP32-CAM stream, fallback to webcam if unavailable
+        startESP32CamStream()
+            .then(() => console.log("ESP32-CAM stream started."))
+            .catch(() => {
+                console.warn("ESP32-CAM stream unavailable, switching to laptop webcam.");
+                startFallbackWebcam();
+            });
     }
+    
 
     // ********** 2. Teachable Machine Model Integration ********** //
     async function initTeachableMachineModel() {
@@ -746,7 +777,8 @@ function convertToBase64(url) {
     // ********** 6. Backend Communication and Database Updates ********** //
     async function sendScreenshotToPython(objectDetected) {
         // Simulated depth value, replace with backend call if necessary
-        return 1.5;  // Placeholder for depth, call Python backend here
+        const depth = (Math.random() * (2 - 0.2) + 0.2).toFixed(2);
+        return parseFloat(depth);  // Return the depth as a number // Placeholder for depth, call Python backend here
     }
 
     async function updateDatabaseWithImage(blob, depth, objectDetected) {
@@ -763,6 +795,9 @@ function convertToBase64(url) {
             timestamp: Date.now(),
             depth: depth,// Optional: add a timestamp or any other data you need
         });
+
+         // Alert after successful upload
+         alert("Upload to Firebase completed!");
         
         console.log('Database updated with image, depth, and material.');
     }
