@@ -631,10 +631,24 @@ function convertToBase64(url) {
     
         function startESP32CamStream() {
             return new Promise((resolve, reject) => {
-                // Attempt to connect to the ESP32-CAM feed
-                video.src = `http://${esp32CamIP}:81/stream`;
-                video.play();
-    
+                const cameraSocket = new WebSocket("ws://192.168.4.1/stream");
+                
+                cameraSocket.binaryType = "blob";
+                
+                cameraSocket.onmessage = function(event) {
+                    
+                    video.src = URL.createObjectURL(event.data);
+                    video.play();  // Display frame
+                };
+               
+                cameraSocket.onclose = function() {
+                    console.log("WebSocket connection closed");
+                };
+        
+                cameraSocket.onerror = function(error) {
+                    console.error("WebSocket error: ", error);
+                };
+
                 // If the ESP32-CAM stream loads, resolve the promise
                 video.addEventListener('loadeddata', () => resolve(true), { once: true });
     
