@@ -141,7 +141,7 @@
             console.log("User signed in successfully");
     
             // Reference to the 'Samples' node in your database
-            const rockDataRef = dbRef(database, 'Mars');
+            const rockDataRef = dbRef(database, 'Samples');
             
             // Use onValue for real-time updates
             onValue(child(rockDataRef, '/'), (snapshot) => {
@@ -799,7 +799,7 @@ function convertToBase64(url) {
         const userCredential = await signInWithEmailAndPassword(auth, 'lanre.mohammed23@gmail.com', 'Wilmar.jr7');
         
         // Reference to the database where you want to store the image URL
-        const videoImageRef = dbRef(database, 'Mars/');
+        const videoImageRef = dbRef(database, 'Samples/');
 
         // Assuming you want to push a new entry to the 'Samples' node
         await update(child(videoImageRef, Date.now().toString()), {
