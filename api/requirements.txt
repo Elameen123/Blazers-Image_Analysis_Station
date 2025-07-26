@@ -1,0 +1,19 @@
+# Core dependencies
+torch>=1.7.0
+torchvision>=0.8.1
+
+# YOLOv5 from Ultralytics (via PyTorch Hub)
+# No need to pip install yolov5 package directly
+# We'll load YOLOv5 via torch.hub.load('ultralytics/yolov5', ...)
+
+# Flask API
+Flask==2.3.2
+flask-cors==4.0.0
+
+# Image processing
+opencv-python-headless==4.7.0.72
+Pillow==9.5.0
+numpy==1.23.5
+
+# For logging (optional, but good practice)
+loguru==0.7.2
