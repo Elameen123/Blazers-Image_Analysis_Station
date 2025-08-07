@@ -4,7 +4,7 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python",
-      "config": { "maxLambdaSize": "15mb" }
+      "config": { "maxLambdaSize": "50mb" }
     }
   ],
   "routes": [
@@ -13,7 +13,9 @@
       "dest": "api/index.py"
     }
   ],
-  "env": {
-    "PYTHONPATH": "."
+  "functions": {
+    "api/index.py": {
+      "runtime": "python3.11"
+    }
   }
 }
