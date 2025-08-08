@@ -27,7 +27,7 @@ import sys
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)  # Go up one level from api/
 
-# Initialize Flask app with correct paths for api folder structure
+
 app = Flask(
     __name__,
     template_folder=os.path.join(parent_dir, 'templates'),  # ../templates
