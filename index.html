@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blazers Command Station</title>
+  <link href="https://fonts.cdnfonts.com/css/cascadia-code" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<!-- Load Font Awesome from CDN -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+
+ <link rel="stylesheet" href="./static/index.css">
+
+</head>
+<body>
+  <div id="projectContainer">
+
+    <div id="headerContainer">
+    <img src="./static/Blazers-Logo.png" alt="blazers_logo" class="logo" id="logo"/>
+
+    <h2>Sample Image Analysis Station</h2>
+    <!-- Camera Source Dropdown - Only visible in Exploration Mode -->
+    <div id="camera-source-dropdown" style="display: none;">
+        <label for="camera-source-select" style="color: lightblue; font-family: 'Courier New', monospace; margin-right: 10px;">CAMERA SOURCE:</label>
+        <select id="camera-source-select" style="background: #031B28; color: lightblue; border: 1px solid lightblue; padding: 5px; font-family: 'Courier New', monospace;">
+        <option value="webcam">LOCAL WEBCAM</option>
+        <option value="esp32">ESP32 CAM</option>
+        <option value="external">EXTERNAL CAMERA</option>
+        </select>
+    </div>
+    </div>
+
+    <div id="pictureContainer">
+        <div id="album">
+          <div id="rock-gallery" class="photoBox">
+            
+          </div>
+        </div>
+
+        <!-- <div id="singlePickout">
+            <header>
+                  <span id="toggleText" class="toggle-text">Exploration Mode</span>
+                  <label title="toggle" class="switch">
+                    <input type="checkbox" id="toggleMode">
+                    <span class="slider round"></span>
+                  </label>
+            </header>
+          <img id="display-image" src="" alt="Selected Image" />
+          <div id="stream">
+            
+            <video id="webcam" autoplay></video>
+          </div>
+          <i id="camera-icon" class="fas fa-camera"></i>
+          <div id="depth-display">
+            
+          </div>
+          <div class="selectedImage_box">
+            <h3 id="display-name">Selected Image Name</h3>
+            <button type="submit" id="analyze-btn">Analyze</button>
+          </div>
+        </div> -->
+
+         <div id="singlePickout">
+            <header>
+                  <span id="toggleText" class="toggle-text">Exploration Mode</span>
+                  <label class="switch" for="toggleMode" title="toggle">
+                    <input type="checkbox" id="toggleMode">
+                    <span class="slider round"></span>
+                  </label>
+
+                  <i id="upload-icon" class="fas fa-upload" title="Upload Image"></i>
+                  <!-- Add this next to your upload icon in the HTML -->
+                  <div id="cancel-icon" style="display: none; cursor: pointer; color: #ff6b6b; font-size: 20px; margin-left: 10px;" title="Remove uploaded image">
+                      <i class="fas fa-times-circle"></i> <!-- or use ✕ symbol -->
+                  </div>
+                  
+            </header>
+          <img id="display-image" src="" alt="Selected Image" />
+          <div id="stream">
+            <video id="webcam" autoplay></video>
+            <i id="expand-icon" class="fas fa-expand expand-icon" title="Open Mission Control"></i>
+          </div>
+          <i id="camera-icon" class="fas fa-camera"></i>
+          <div id="depth-display">
+            
+          </div>
+
+           <div id="model-status" style="font-size: 0.8rem; color: #666; margin-top: 5px;">No Model Selected</div>
+
+            <div class="selectedImage_box">
+                <h3 id="display-name">Selected Image Name</h3>
+                 <button type="submit" id="analyze-btn">Analyze</button>
+               
+            </div>
+
+            <input type="file" id="image-upload-input" accept="image/*" style="display: none;" />
+
+        </div>
+    
+
+        <canvas id="screenshot-canvas" style="display:none;"></canvas>
+    </div>
+
+    <div id="analysisContainer">
+      <div id="analysisHeader">
+        <h6>ANALYSIS CONSOLE</h6>
+
+        <div id="analysis-content">
+      
+          <div id="status">
+              <span id="status-text">RUNNING ANALYSIS. . .</span>
+              <div id="progress-container">
+                  <div id="progress-bar"></div>
+              </div>
+          </div>
+          <div id="result-message">IMAGE ANALYSIS COMPLETE!</div>
+          <!-- <button id="download-report-btn">Download Report</button> -->
+
+      </div>
+      
+      </div>
+
+      <div id="analysis-section">
+        <div id="properties-container" class="analysis-box">
+            <!-- Rock properties will be populated here -->
+        </div>
+        <div id="life-support-container" class="analysis-box">
+            <!-- Life support potential will be populated here -->
+        </div>
+        <div id="analyst-container" class="analysis-box">
+            <input type="text" id="image-name-input" placeholder="Change Image Name">
+            <textarea id="comment-input" placeholder="Add comments"></textarea>
+            <input type="text" id="analyst-name" placeholder="Analyst Name and Designation">
+            <button id="save-analysis-btn">Save Analysis</button>
+
+            
+        </div>
+    </div>
+
+    </div>
+
+      <!-- Rover Control Modal -->
+    <div id="roverControlModal" class="rover-control-modal">
+      <div class="rover-control-content">
+        <div class="rover-control-header">
+          <div>
+            <span>MARS ROVER MISSION CONTROL STATION</span>
+            <div class="connection-indicator">
+              <div id="connectionDot" class="status-dot"></div>
+              <span id="connectionStatus">DISCONNECTED</span>
+            </div>
+          </div>
+          <span class="close-modal" id="closeModal">&times;</span>
+        </div>
+        
+        <div class="rover-control-body">
+          <div class="video-section">
+            <div class="rover-video-container">
+              <video id="roverVideoFeed" class="rover-video-feed" autoplay></video>
+              <div class="video-overlay">
+                <div>STATUS: <span id="roverStatus">STANDBY</span></div>
+                <div>MISSION: <span id="currentMission">NONE</span></div>
+                <div>TARGET: <span id="currentTarget">SCANNING...</span></div>
+              </div>
+            </div>
+            
+            <div class="control-buttons">
+              <button class="rover-btn" id="startAutonomous">Start Autonomous</button>
+              <button class="rover-btn" id="startMission">Begin Mission</button>
+              <button class="rover-btn" id="toggleSweep">Toggle Sweep</button>
+              <button class="rover-btn" id="resetSequence">Reset Sequence</button>
+              <button class="rover-btn" id="abortMission">Abort Mission</button>
+              <button class="rover-btn emergency" id="emergencyStop">EMERGENCY STOP</button>
+            </div>
+          </div>
+          
+          <div class="control-section">
+            <div class="mission-status-panel">
+              <div class="status-header">Mission Status</div>
+              <div id="statusLog" class="status-log">
+                <div><span class="timestamp">00:00:00</span><span class="status-good">SYSTEM INITIALIZED</span></div>
+                <div><span class="timestamp">00:00:01</span><span class="status-warning">AWAITING CONNECTION...</span></div>
+              </div>
+            </div>
+            
+                <div class="object-detection-panel" id="object-detection-panel">
+                    <div class="status-header">Object Detection Status</div>
+                    <div class="detection-counter">
+                        <span>Objects Detected: <span id="detection-count">0</span></span>
+                    </div>
+                    <div id="object-grid" class="object-grid">
+                        <!-- Objects will be populated by JavaScript -->
+                    </div>
+                </div>
+            
+            <div class="mission-log-panel">
+              <div class="status-header">Mission Log</div>
+              <textarea id="logInput" class="log-input-area" placeholder="Enter mission log entry..."></textarea>
+              <button class="rover-btn" id="addLogEntry" style="width: 100%; margin-top: 10px;">Add Log Entry</button>
+              <div id="logEntries" class="log-entries">
+                <!-- Log entries will be populated here -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  
+</div>
+
+<div id="model-selection-modal" class="model-selection-modal">
+  <div class="model-selection-content">
+    <div class="model-selection-header">
+      <h3>Select Analysis Model</h3>
+      <span class="close-model-modal" onclick="closeModelSelectionModal()">&times;</span>
+    </div>
+    <div class="model-selection-body">
+      <p>Select the appropriate model for analyzing: <span id="selected-file-name"></span></p>
+      <div class="model-options">
+        <button class="model-btn" onclick="selectModel('rock')">
+          <i class="fas fa-mountain"></i>
+          <span>ROCK ANALYSIS</span>
+          <small>Geological samples and rock formations</small>
+        </button>
+        <button class="model-btn" onclick="selectModel('object')">
+          <i class="fas fa-cube"></i>
+          <span>OBJECT DETECTION</span>
+          <small>General object recognition</small>
+        </button>
+        <button class="model-btn" onclick="selectModel('general')">
+          <i class="fas fa-eye"></i>
+          <span>GENERAL VISION</span>
+          <small>Multi-purpose image analysis</small>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="./static/js/config.js"></script>
+    
+    <!-- 2. External libraries -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js" type="module"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- 3. Your application scripts -->
+    <script type="module" src="./static/js/firebase-config.js"></script>
+    <script src="./static/js/rover-controller.js"></script>
+    <script src="./static/js/main.js"></script>
+
+
+</body>
+</html>

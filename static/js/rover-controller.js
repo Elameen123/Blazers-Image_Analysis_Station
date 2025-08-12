@@ -1,7 +1,18 @@
 // Enhanced Rover Control System - Manual Capture Only, No Keyboard Shortcuts
-class RoverController {
+    class RoverController {
     constructor() {
-        this.esp32IP = "192.168.0.102";
+        // Use static configuration
+        this.API_BASE_URL = window.CONFIG ? window.CONFIG.getApiUrl() : 'https://your-space-name.hf.space';
+        this.esp32IP = window.CONFIG ? window.CONFIG.ESP32_IP : "192.168.0.102";
+        
+        // Log the configuration being used
+        console.log('🤖 RoverController initialized with:', {
+            apiBaseUrl: this.API_BASE_URL,
+            esp32IP: this.esp32IP,
+            environment: window.CONFIG?.IS_DEVELOPMENT ? 'DEVELOPMENT' : 'PRODUCTION'
+        });
+        
+        // Rest of your existing constructor code...
         this.websockets = {
             camera: null,
             servo: null,
@@ -20,20 +31,8 @@ class RoverController {
         this.localStream = null;
         this.allVideoElements = [];
         
-        // Detectable objects list
         this.detectableObjects = [
-            'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck',
-            'boat', 'traffic_light', 'fire_hydrant', 'stop_sign', 'parking_meter', 'bench',
-            'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra',
-            'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
-            'skis', 'snowboard', 'sports_ball', 'kite', 'baseball_bat', 'baseball_glove',
-            'skateboard', 'surfboard', 'tennis_racket', 'bottle', 'wine_glass', 'cup',
-            'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange',
-            'broccoli', 'carrot', 'hot_dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
-            'potted_plant', 'bed', 'dining_table', 'toilet', 'tv', 'laptop', 'mouse',
-            'remote', 'keyboard', 'cell_phone', 'microwave', 'oven', 'toaster', 'sink',
-            'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy_bear', 'hair_dryer',
-            'toothbrush', 'hammer', 'balloon', 'tennis_ball', 'traffic_cone'
+            'person', 'hammer', 'balloon', 'tennis_ball', 'traffic_cone'
         ];
         
         this.detectedObjects = new Set();
@@ -277,9 +276,9 @@ class RoverController {
             // Remove highlight after 5 seconds
             setTimeout(() => {
                 objButton.style.background = 'rgba(0, 255, 65, 0.1)';
-                objButton.style.color = '#00ff41';
-                objButton.style.borderColor = '#00ff41';
-            }, 5000);
+                objButton.style.color = '#c95afdff';
+                objButton.style.borderColor = '#c95afdff';
+            }, 10000);
         }
     }
     
@@ -323,7 +322,11 @@ class RoverController {
         
         if (statusLog) {
             const logEntry = document.createElement('div');
-            logEntry.innerHTML = `<span class="timestamp">${timestamp}</span><span class="status-${type}">${message.toUpperCase()}</span>`;
+            // Add environment indicator for important messages
+            const envIndicator = window.CONFIG?.IS_DEVELOPMENT ? '[DEV] ' : '[PROD] ';
+            const finalMessage = ['good', 'error'].includes(type) ? envIndicator + message : message;
+            
+            logEntry.innerHTML = `<span class="timestamp">${timestamp}</span><span class="status-${type}">${finalMessage.toUpperCase()}</span>`;
             statusLog.appendChild(logEntry);
             statusLog.scrollTop = statusLog.scrollHeight;
             
@@ -333,6 +336,8 @@ class RoverController {
             }
         }
     }
+    
+    // Rest of your existing methods remain the same...
     
     updateMissionStatus(data) {
         this.missionState = { ...this.missionState, ...data };
@@ -365,12 +370,16 @@ class RoverController {
         }, 10000); // Every 10 seconds
     }
     
+
     async sendFrameForDetection(frameBlob) {
         try {
             const formData = new FormData();
             formData.append('frame', frameBlob);
             
-            const response = await fetch('http://localhost:5000/detect', {
+            // Use configuration-based URL
+            const detectUrl = window.CONFIG ? window.CONFIG.getEndpointUrl('PREDICT') : `${this.API_BASE_URL}/api/predict`;
+            
+            const response = await fetch(detectUrl, {
                 method: 'POST',
                 body: formData,
                 timeout: 5000
@@ -534,32 +543,38 @@ class RoverController {
         }
     }
     
-    async updateDatabaseWithImage(imageUrl, depth, objectDetected) {
-        try {
-            const userCredential = await window.firebaseRefs.signInWithEmailAndPassword(window.firebaseAuth, 'lanre.mohammed23@gmail.com', 'Wilmar.jr7');
-            
-            const videoImageRef = window.firebaseRefs.dbRef(window.firebaseDatabase, 'Samples/');
-            const timestamp = Date.now();
-            
-            await window.firebaseRefs.update(window.firebaseRefs.child(videoImageRef, timestamp.toString()), {
-                object: objectDetected,
-                image_name: `manual_capture_${objectDetected}_${timestamp}`,
-                image: `EXPLORATION_SAMPLES/screenshot_${timestamp}.png`,
-                timestamp: timestamp,
-                depth: depth,
-                mode: 'exploration_manual',
-                camera_source: this.currentCameraSource,
-                analyst_name: 'Rover System',
-                analyst_comment: `Manually captured during exploration mission. Context: ${objectDetected}. Source: ${this.currentCameraSource.toUpperCase()}`
-            });
+   async updateDatabaseWithImage(imageUrl, depth, objectDetected) {
+    try {
+        const userCredential = await window.firebaseRefs.signInWithEmailAndPassword(
+            window.firebaseAuth, 
+            'lanre.mohammed23@gmail.com', 
+            'Wilmar.jr7'
+        );
+        
+        const videoImageRef = window.firebaseRefs.dbRef(window.firebaseDatabase, 'Samples/');
+        const timestamp = Date.now();
+        const imagePath = imageUrl;
+        
+        await window.firebaseRefs.update(window.firebaseRefs.child(videoImageRef, timestamp.toString()), {
+            object: objectDetected,
+            image_name: `manual_capture_${objectDetected}_${timestamp}`,
+            image: imagePath, // Store just the path, not the full URL
+            timestamp: timestamp,
+            depth: depth,
+            mode: 'exploration_manual',
+            camera_source: this.currentCameraSource,
+            analyst_name: 'Rover System',
+            analyst_comment: `Manually captured during exploration mission. Context: ${objectDetected}. Source: ${this.currentCameraSource.toUpperCase()}`
+        });
 
-            this.addStatusLog("Manual capture uploaded to database", "good");
-            
-        } catch (error) {
-            console.error('Database update error:', error);
-            this.addStatusLog("Database update failed", "error");
-        }
+        this.addStatusLog("Manual capture uploaded to database", "good");
+        
+    } catch (error) {
+        console.error('Database update error:', error);
+        this.addStatusLog("Database update failed", "error");
     }
+}
+
     
     startObjectDetection() {
         if (this.objectDetectionRunning) return;
@@ -721,42 +736,8 @@ class RoverController {
             }
         });
         
-        // Movement controls with enhanced touch support
-        const movementButtons = {
-            'moveForward': 'forward',
-            'moveBackward': 'backward',
-            'moveLeft': 'left',
-            'moveRight': 'right',
-            'moveStop': 'stop'
-        };
-        
-        Object.entries(movementButtons).forEach(([id, direction]) => {
-            const btn = document.getElementById(id);
-            if (btn) {
-                // Mouse events
-                btn.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    this.sendCommand('move', direction);
-                });
-                btn.addEventListener('mouseup', (e) => {
-                    e.preventDefault();
-                    if (direction !== 'stop') this.sendCommand('move', 'stop');
-                });
-                
-                // Touch events for mobile
-                btn.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    this.sendCommand('move', direction);
-                });
-                btn.addEventListener('touchend', (e) => {
-                    e.preventDefault();
-                    if (direction !== 'stop') this.sendCommand('move', 'stop');
-                });
-                
-                // Prevent context menu on long press
-                btn.addEventListener('contextmenu', (e) => e.preventDefault());
-            }
-        });
+       
+    
         
         // Mission log functionality
         const addLogBtn = document.getElementById('addLogEntry');
@@ -853,25 +834,40 @@ class RoverController {
     }
     
     // Health check for backend services
-    async checkBackendHealth() {
-        try {
-            const response = await fetch('http://localhost:5000/health', {
-                method: 'GET'
-            });
-            
-            if (response.ok) {
-                const health = await response.json();
-                this.addStatusLog("Object detection backend online", "good");
-                return true;
-            } else {
-                this.addStatusLog("Backend health check failed", "warning");
-                return false;
-            }
-        } catch (error) {
-            this.addStatusLog("Backend not available - using fallback mode", "warning");
-            return false;
+  async checkBackendHealth() {
+    try {
+        const healthUrl = window.CONFIG 
+            ? window.CONFIG.getEndpointUrl('HEALTH') 
+            : `${this.API_BASE_URL}/api/health`;
+
+        const response = await fetch(healthUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        // Check status
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} - ${response.statusText}`);
         }
+
+        // Check content type to avoid HTML parsing errors
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            throw new Error(`Expected JSON, got: ${contentType}`);
+        }
+
+        const health = await response.json();
+        this.addStatusLog("Object detection backend online", "good");
+        console.log('✅ Backend health check passed:', health);
+        return true;
+
+    } catch (error) {
+        this.addStatusLog("Backend not available - using fallback mode", "warning");
+        console.error('❌ Backend health check error:', error);
+        return false;
     }
+}
+
     
     // Enhanced method to get current active camera info
     getCurrentCameraInfo() {

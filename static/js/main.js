@@ -1,4 +1,5 @@
 // Enhanced Main Application Logic - Consolidated Image Analysis and UI Management
+const API_BASE_URL = window.CONFIG ? window.CONFIG.getApiUrl() : 'https://your-space-name.hf.space';
 
 // Global variables
 let roverController;
@@ -18,11 +19,13 @@ let maxPredictions = 0;
 let selectedModel = null;
 let modelLoaded = false;
 let currentCameraSource = "webcam";
+let resetTimer = null;
+let isUploadedImage = false;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Firebase components first
-    const gallery = document.getElementById('rock-gallery');
+    // const gallery = document.getElementById('rock-gallery');
     const displayImage = document.getElementById('display-image');
     const displayName = document.getElementById('display-name');
 
@@ -63,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function displayRockGallery(rockData) {
         const gallery = document.getElementById('rock-gallery');
+        gallery.innerHTML = ''; // Clear previous gallery content
 
         Object.values(rockData).forEach(imgData => {
             const card = document.createElement('div');
@@ -87,12 +91,32 @@ document.addEventListener('DOMContentLoaded', function () {
             name.innerText = imgData.image_name;
 
             card.addEventListener('click', () => {
-                analysisSection.style.display = 'none';
+                // Reset any previous state
+                resetAnalysisDisplay();
                 clearDetectionResults();
+                
+                // Clear any uploaded image state
+                const cancelIcon = document.getElementById('cancel-icon');
+                if (cancelIcon) {
+                    cancelIcon.style.display = 'none';
+                }
+                
+                // Clear any active reset timer
+                if (resetTimer) {
+                    clearTimeout(resetTimer);
+                    resetTimer = null;
+                }
+                
+                // Set new image
                 displayImage.src = img.src;
                 displayName.innerText = imgData.image_name;
                 storeImageInSession(displayImage.src);
-                resetModelSelection();
+                
+                // For gallery images, automatically select rock model
+                isUploadedImage = false;
+                selectedModel = 'rock';
+                loadTeachableMachineModel('rock');
+                updateModelStatus('Loading ROCK Model...');
             });
 
             card.appendChild(img);
@@ -114,6 +138,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const cameraIcon = document.getElementById('camera-icon');
     const expandIcon = document.getElementById('expand-icon');
     const cameraSourceDropdown = document.getElementById('camera-source-dropdown');
+    
 
     function switchToExplorationMode() {
         toggleText.innerText = "Exploration Mode";
@@ -193,6 +218,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
         imageUploadInput.addEventListener('change', handleImageUpload);
     }
+
+    const cancelIcon = document.getElementById('cancel-icon');
+    if (cancelIcon) {
+        cancelIcon.addEventListener('click', () => {
+            clearUploadedImage();
+        });
+    }
     
     // Initialize webcam with fallback
     initializeWebcam();
@@ -227,21 +259,25 @@ function handleImageUpload(event) {
         reader.onload = function(e) {
             const displayImage = document.getElementById('display-image');
             const displayName = document.getElementById('display-name');
+            const cancelIcon = document.getElementById('cancel-icon');
             
             displayImage.src = e.target.result;
             displayName.innerText = file.name;
             
-            // Clear any previous results
-            clearDetectionResults();
-            const analysisSection = document.getElementById('analysis-section');
-            if (analysisSection) {
-                analysisSection.style.display = 'none';
+            // Show cancel icon for uploaded images
+            if (cancelIcon) {
+                cancelIcon.style.display = 'inline-block';
             }
             
-            // Reset model selection for new upload
+            // Mark as uploaded image
+            isUploadedImage = true;
+            
+            // Clear any previous results and reset
+            clearDetectionResults();
+            resetAnalysisDisplay();
             resetModelSelection();
             
-            // Show model selection modal
+            // Show model selection modal for uploaded images
             showModelSelectionModal(file.name);
             
             // Store uploaded image data
@@ -252,6 +288,7 @@ function handleImageUpload(event) {
         alert('Please select a valid image file.');
     }
 }
+
 
 // Show model selection modal
 function showModelSelectionModal(fileName) {
@@ -287,13 +324,52 @@ function selectModel(modelType) {
     }
 }
 
+function clearUploadedImage() {
+    const displayImage = document.getElementById('display-image');
+    const displayName = document.getElementById('display-name');
+    const cancelIcon = document.getElementById('cancel-icon');
+    const imageUploadInput = document.getElementById('image-upload-input');
+    
+    // Clear the image display
+    displayImage.src = '';
+    displayName.innerText = 'Selected Image Name';
+    
+    // Hide cancel icon
+    if (cancelIcon) {
+        cancelIcon.style.display = 'none';
+    }
+    
+    // Clear file input
+    if (imageUploadInput) {
+        imageUploadInput.value = '';
+    }
+    
+    // Reset flags and state
+    isUploadedImage = false;
+    resetAnalysisDisplay();
+    resetModelSelection();
+    clearDetectionResults();
+    
+    // Clear any active reset timer
+    if (resetTimer) {
+        clearTimeout(resetTimer);
+        resetTimer = null;
+    }
+}
+
 // Initialize General Vision model (Python backend with YOLOv8)
 async function initializeGeneralVisionModel() {
     try {
         updateModelStatus("Connecting to GENERAL VISION backend...");
         
-        const response = await fetch('http://localhost:5000/health', {
+        // Use the configuration-based URL
+        const healthUrl = window.CONFIG ? window.CONFIG.getEndpointUrl('HEALTH') : `${API_BASE_URL}/api/health`;
+        
+        const response = await fetch(healthUrl, {
             method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
             timeout: 5000
         });
         
@@ -302,12 +378,12 @@ async function initializeGeneralVisionModel() {
             modelLoaded = true;
             updateModelStatus("GENERAL VISION Model Ready");
             updateAnalyzeButtonState();
-            console.log('General Vision model (YOLOv8) initialized via Python backend');
+            console.log('✅ General Vision model (YOLOv8) initialized via backend:', healthUrl);
         } else {
             throw new Error('Backend health check failed');
         }
     } catch (error) {
-        console.error('Error initializing General Vision model:', error);
+        console.error('❌ Error initializing General Vision model:', error);
         modelLoaded = false;
         updateModelStatus("General Vision backend unavailable - Retrying...");
         updateAnalyzeButtonState();
@@ -320,6 +396,7 @@ async function initializeGeneralVisionModel() {
         }, 3000);
     }
 }
+
 
 // Load Teachable Machine models for rock and object detection
 async function loadTeachableMachineModel(modelType) {
@@ -383,7 +460,15 @@ function updateModelStatus(statusText) {
 function updateAnalyzeButtonState() {
     const analyzeBtn = document.getElementById('analyze-btn');
     if (analyzeBtn) {
-        if (selectedModel && modelLoaded) {
+        // For uploaded images, require model selection
+        if (isUploadedImage && (!selectedModel || !modelLoaded)) {
+            analyzeBtn.disabled = true;
+            analyzeBtn.style.opacity = '0.5';
+            analyzeBtn.style.cursor = 'not-allowed';
+            analyzeBtn.textContent = 'Select Model First';
+        }
+        // For gallery images or when model is loaded
+        else if ((!isUploadedImage && selectedModel && modelLoaded) || (isUploadedImage && selectedModel && modelLoaded)) {
             analyzeBtn.disabled = false;
             analyzeBtn.style.opacity = '1';
             analyzeBtn.style.cursor = 'pointer';
@@ -395,7 +480,7 @@ function updateAnalyzeButtonState() {
             if (selectedModel && !modelLoaded) {
                 analyzeBtn.textContent = 'Loading Model...';
             } else {
-                analyzeBtn.textContent = 'Select Model First';
+                analyzeBtn.textContent = 'Loading...';
             }
         }
     }
@@ -478,7 +563,7 @@ async function analyzeImage() {
 // General Vision analysis using Python backend (YOLOv8)
 async function performGeneralVisionAnalysis(imageElement) {
     try {
-        // Convert image to blob for sending to Python backend
+        // Convert image to blob for sending to backend
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = imageElement.naturalWidth || 640;
@@ -491,26 +576,30 @@ async function performGeneralVisionAnalysis(imageElement) {
             formData.append('frame', blob);
             
             try {
-                const response = await fetch('http://localhost:5000/detect', {
+                // Use configuration-based URL
+                const predictUrl = window.CONFIG ? window.CONFIG.getEndpointUrl('PREDICT') : `${API_BASE_URL}/api/predict`;
+                
+                const response = await fetch(predictUrl, {
                     method: 'POST',
                     body: formData
                 });
                 
                 if (response.ok) {
                     const result = await response.json();
+                    console.log('✅ Detection result received:', result);
                     displayGeneralVisionResults(result);
                 } else {
-                    throw new Error('Detection failed');
+                    throw new Error(`Detection failed: ${response.status} ${response.statusText}`);
                 }
             } catch (error) {
-                console.error('General Vision detection error:', error);
-                displayGeneralVisionError();
+                console.error('❌ General Vision detection error:', error);
+                displayGeneralVisionError(error.message);
             }
         }, 'image/jpeg', 0.8);
         
     } catch (error) {
-        console.error('Error in General Vision analysis:', error);
-        displayGeneralVisionError();
+        console.error('❌ Error in General Vision analysis:', error);
+        displayGeneralVisionError(error.message);
     }
 }
 
@@ -519,57 +608,54 @@ function displayGeneralVisionResults(result) {
     const displayName = document.getElementById('display-name');
     const fileName = displayName.innerText;
     
-    // Create or update detection results container
-    let detectionResults = document.getElementById('detection-results');
-    if (!detectionResults) {
-        detectionResults = document.createElement('div');
-        detectionResults.id = 'detection-results';
-        detectionResults.style.cssText = `
-            background: rgba(0, 0, 0, 0.8);
-            border: 1px solid #00ff41;
-            border-radius: 5px;
-            padding: 15px;
-            margin-top: 10px;
-            color: #00ff41;
-            font-family: monospace;
-        `;
-        displayName.parentNode.appendChild(detectionResults);
+    const propertiesContainer = document.getElementById('properties-container');
+    const lifeSupportContainer = document.getElementById('life-support-container');
+    
+    if (propertiesContainer) {
+        let resultsHTML = `<h4>GENERAL VISION ANALYSIS</h4>`;
+        resultsHTML += `<p><strong>File:</strong> ${fileName}</p>`;
+        resultsHTML += `<p><strong>Model:</strong> YOLOv8 (GENERAL VISION)</p>`;
+        
+        if (result.objects && result.objects.length > 0) {
+            resultsHTML += `<h5>Detected Objects:</h5>`;
+            result.objects.slice(0, 5).forEach((obj, index) => {
+                const confidence = (obj.confidence * 100).toFixed(1);
+                const confidenceColor = obj.confidence > 0.7 ? '#00ff41' : obj.confidence > 0.5 ? '#ffaa00' : '#ff6b6b';
+                resultsHTML += `<p style="color: ${confidenceColor};">${index + 1}. ${obj.class.toUpperCase()} (${confidence}%)</p>`;
+            });
+        } else {
+            resultsHTML += `<p style="color: #ff6b6b;">No objects detected with sufficient confidence.</p>`;
+        }
+        
+        propertiesContainer.innerHTML = resultsHTML;
     }
     
-    let resultsHTML = `<h4 style="color: #ffaa00; margin-top: 0;">GENERAL VISION ANALYSIS</h4>`;
-    resultsHTML += `<p><strong>File:</strong> ${fileName}</p>`;
-    resultsHTML += `<p><strong>Model:</strong> YOLOv8 (GENERAL VISION)</p>`;
-    
-    if (result.objects && result.objects.length > 0) {
-        resultsHTML += `<h5>Detected Objects:</h5>`;
-        result.objects.slice(0, 5).forEach((obj, index) => {
-            const confidence = (obj.confidence * 100).toFixed(1);
-            const confidenceColor = obj.confidence > 0.7 ? '#00ff41' : obj.confidence > 0.5 ? '#ffaa00' : '#ff6b6b';
-            resultsHTML += `<p style="color: ${confidenceColor};">${index + 1}. ${obj.class.toUpperCase()} (${confidence}%)</p>`;
-        });
+    if (lifeSupportContainer) {
+        const primaryObject = result.objects && result.objects.length > 0 ? result.objects[0] : null;
+        let statusHTML = `<h4>Analysis Summary</h4>`;
+        statusHTML += `<p><strong>Detection Method:</strong> YOLOv8 General Vision</p>`;
+        statusHTML += `<p><strong>Status:</strong> Object detection complete</p>`;
+        if (primaryObject) {
+            statusHTML += `<p><strong>Primary Object:</strong> ${primaryObject.class.toUpperCase()}</p>`;
+            statusHTML += `<p><strong>Confidence:</strong> ${(primaryObject.confidence * 100).toFixed(1)}%</p>`;
+        }
+        statusHTML += `<p><small>Timestamp: ${new Date().toLocaleTimeString()}</small></p>`;
         
-        // Show primary detection
-        const primaryObject = result.objects[0];
-        showTemporaryDetection(primaryObject);
-        
-    } else {
-        resultsHTML += `<p style="color: #ff6b6b;">No objects detected with sufficient confidence.</p>`;
+        lifeSupportContainer.innerHTML = statusHTML;
     }
-    
-    resultsHTML += `<p><small>Timestamp: ${new Date().toLocaleTimeString()}</small></p>`;
-    
-    detectionResults.innerHTML = resultsHTML;
-    detectionResults.style.display = 'block';
     
     // Show analysis section
     analysisSection.style.display = 'flex';
     
     // Setup save analysis button for general vision results
     setupSaveAnalysisButton();
+    
+    // Start reset timer
+    startResetTimer();
 }
 
 // Display General Vision error
-function displayGeneralVisionError() {
+function displayGeneralVisionError(errorMessage = 'Unknown error') {
     let detectionResults = document.getElementById('detection-results');
     if (!detectionResults) {
         detectionResults = document.createElement('div');
@@ -587,30 +673,80 @@ function displayGeneralVisionError() {
         displayName.parentNode.appendChild(detectionResults);
     }
     
+    const currentEnv = window.CONFIG?.IS_DEVELOPMENT ? 'DEVELOPMENT' : 'PRODUCTION';
+    const apiUrl = window.CONFIG ? window.CONFIG.getApiUrl() : 'Not configured';
+    
     detectionResults.innerHTML = `
         <h4 style="color: #ff6b6b; margin-top: 0;">GENERAL VISION ERROR</h4>
-        <p>Unable to connect to General Vision backend.</p>
-        <p>Please ensure the Python server is running on localhost:5000</p>
-        <p><small>Try using Rock or Object models instead.</small></p>
+        <p><strong>Error:</strong> ${errorMessage}</p>
+        <p><strong>Environment:</strong> ${currentEnv}</p>
+        <p><strong>API URL:</strong> ${apiUrl}</p>
+        <p><strong>Status:</strong> Unable to connect to General Vision backend</p>
+        <p><small>💡 Try using Rock or Object models instead</small></p>
+        ${window.CONFIG?.IS_DEVELOPMENT ? 
+            '<p><small>🔧 Development: Make sure your local server is running on localhost:5000</small></p>' :
+            '<p><small>🚀 Production: Check Hugging Face Space status</small></p>'
+        }
     `;
     detectionResults.style.display = 'block';
 }
 
 // Show temporary detection in depth display
-function showTemporaryDetection(detection) {
-    const depthDisplay = document.getElementById('depth-display');
-    if (depthDisplay) {
-        const detectionText = `DETECTED: ${detection.class.toUpperCase()} (${(detection.confidence * 100).toFixed(1)}%)`;
-        depthDisplay.innerHTML = detectionText;
-        depthDisplay.style.display = 'flex';
-        depthDisplay.style.color = detection.confidence > 0.7 ? '#00ff41' : '#ffaa00';
+// function showTemporaryDetection(detection) {
+//     const depthDisplay = document.getElementById('depth-display');
+//     if (depthDisplay) {
+//         const detectionText = `DETECTED: ${detection.class.toUpperCase()} (${(detection.confidence * 100).toFixed(1)}%)`;
+//         depthDisplay.innerHTML = detectionText;
+//         depthDisplay.style.display = 'flex';
+//         depthDisplay.style.color = detection.confidence > 0.7 ? '#00ff41' : '#ffaa00';
         
-        // Hide after 5 seconds
-        setTimeout(() => {
-            depthDisplay.style.display = 'none';
-        }, 5000);
+//         // Hide after 5 seconds
+//         setTimeout(() => {
+//             depthDisplay.style.display = 'none';
+//         }, 5000);
+//     }
+// }
+
+async function checkBackendHealth() {
+    try {
+        const healthUrl = window.CONFIG ? window.CONFIG.getEndpointUrl('HEALTH') : `${API_BASE_URL}/api/health`;
+        
+        const response = await fetch(healthUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            const health = await response.json();
+            console.log('✅ Backend health check passed:', health);
+            return true;
+        } else {
+            console.warn('⚠️ Backend health check failed:', response.status, response.statusText);
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Backend health check error:', error);
+        return false;
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Your existing DOMContentLoaded code...
+    
+    // Add health check after a delay to let everything load
+    setTimeout(async () => {
+        console.log('🔍 Performing initial backend health check...');
+        const isHealthy = await checkBackendHealth();
+        
+        if (isHealthy) {
+            console.log('✅ Backend is healthy and ready');
+        } else {
+            console.warn('⚠️ Backend health check failed - some features may not work');
+        }
+    }, 2000);
+});
 
 // Teachable Machine analysis workflow
 async function performTeachableMachineAnalysis(imageElement) {
@@ -643,6 +779,8 @@ async function performTeachableMachineAnalysis(imageElement) {
         updateDetectionDisplay({ className: "Unknown", probability: 0 });
         analysisSection.style.display = 'flex';
     }
+
+    startResetTimer();
 }
 
 async function predictImage(image) {
@@ -755,9 +893,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     // Set up save analysis button
                     setupSaveAnalysisButton();
+
                 }
             }, 1000);
         });
+         startResetTimer();
     }
 });
 
@@ -898,196 +1038,126 @@ function displayAnalysisData(imageName) {
 
 // PDF Report Generation
 function generatePDFReport() {
-  const analysisImageSrc = document.getElementById('display-image').src;
-  const rockCharacteristics = document.getElementById('properties-container').innerText;
-  const habitabilityAssessment = document.getElementById('life-support-container').innerText;
-  const analystComment = document.getElementById('comment-input').value;
-  const analystName = document.getElementById('analyst-name').value;
-  const imageNameInput = document.getElementById('image-name-input').value;
-  const logoImageSrc = './Blazers-Logo.png';
+    const { jsPDF } = window.jspdf;
 
-  const reportContainer = document.createElement('div');
-  reportContainer.className = 'report-container';
-  reportContainer.style.cssText = `
-      font-family: Arial, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-      background: white;
-      color: black;
-  `;
+    const analysisImageSrc = document.getElementById('display-image').src;
+    const rockCharacteristics = document.getElementById('properties-container').innerText;
+    const habitabilityAssessment = document.getElementById('life-support-container').innerText;
+    const analystComment = document.getElementById('comment-input').value;
+    const analystName = document.getElementById('analyst-name').value;
+    const imageNameInput = document.getElementById('image-name-input').value;
+    const logoImageSrc = '../Blazers-Logo.png';
 
-  const letterhead = document.createElement('div');
-  letterhead.className = 'letterhead';
-  letterhead.style.cssText = `
-      display: flex;
-      align-items: center;
-      margin-bottom: 30px;
-      border-bottom: 2px solid #333;
-      padding-bottom: 20px;
-  `;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 15;
+    let yPos = margin + 25; // space for header
 
-  const logoSection = document.createElement('div');
-  logoSection.className = 'logo-section';
-  const logoImg = document.createElement('img');
-  logoImg.src = logoImageSrc;
-  logoImg.style.cssText = 'width: 80px; height: 80px; margin-right: 20px;';
-  logoSection.appendChild(logoImg);
+    // Draw header
+    function addHeader() {
+        pdf.addImage(logoImageSrc, 'PNG', margin, margin, 20, 20);
+        pdf.setFontSize(16);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text("Mars Rover Image Analysis Report", margin + 25, margin + 10);
+        pdf.setDrawColor(0);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, margin + 20, pageWidth - margin, margin + 20);
+    }
 
-  const textSection = document.createElement('div');
-  textSection.className = 'text-section';
-  const title = document.createElement('h1');
-  title.innerText = 'Mars Rover Image Analysis Report';
-  title.style.cssText = 'margin: 0; font-size: 24px;';
-  textSection.appendChild(title);
+    // Draw footer
+    function addFooter(pageNum, totalPages) {
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100);
+        pdf.text(
+            "Gale Crater Research Station, Latitude -5.4, Longitude 137.8, Mars | blazersteam@gmail.com",
+            pageWidth / 2,
+            pageHeight - 10,
+            { align: 'center' }
+        );
+        pdf.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+    }
 
-  letterhead.appendChild(logoSection);
-  letterhead.appendChild(textSection);
+    // Add text with wrapping & auto-page-break
+    function addWrappedText(text, x, y, maxWidth, lineHeight) {
+        const lines = pdf.splitTextToSize(text, maxWidth);
+        for (let i = 0; i < lines.length; i++) {
+            if (y > pageHeight - margin - 20) {
+                pdf.addPage();
+                addHeader();
+                y = margin + 25;
+            }
+            pdf.text(lines[i], x, y);
+            y += lineHeight;
+        }
+        return y;
+    }
 
-  // Sample Details section
-  const reportSection1 = document.createElement('div');
-  reportSection1.className = 'report-section';
-  reportSection1.style.cssText = 'margin-bottom: 30px;';
-  
-  const sampleDetailsTitle = document.createElement('h2');
-  sampleDetailsTitle.innerText = 'Sample Details';
-  sampleDetailsTitle.style.cssText = 'color: #333; border-bottom: 1px solid #ccc; padding-bottom: 5px;';
-  
-  const togetherDiv = document.createElement('div');
-  togetherDiv.className = 'together';
-  togetherDiv.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 20px;';
-  
-  const sampleName = document.createElement('p');
-  sampleName.innerHTML = `<b>Sample Name: </b> ${imageNameInput}`;
-  
-  const dateCaptured = document.createElement('p');
-  dateCaptured.innerHTML = `<b>Date Captured: </b><span>${new Date().toLocaleDateString()}</span>`;
-  
-  const modelUsed = document.createElement('p');
-  modelUsed.innerHTML = `<b>Model Used: </b><span>${selectedModel.toUpperCase()}</span>`;
-  
-  togetherDiv.appendChild(sampleName);
-  togetherDiv.appendChild(dateCaptured);
+    // --- Page 1 ---
+    addHeader();
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'normal');
 
-  const sampleImage = document.createElement('img');
-  sampleImage.id = imageNameInput;
-  sampleImage.style.cssText = 'max-width: 100%; height: auto; margin: 20px 0;';
-  
-  const sampleCaption = document.createElement('i');
-  sampleCaption.innerText = `Fig.1 ${imageNameInput}_Sample`;
-  sampleCaption.style.cssText = 'display: block; text-align: center; margin-bottom: 20px;';
+    // Sample Details
+    pdf.setFont('helvetica', 'bold');
+    pdf.text("Sample Details", margin, yPos);
+    yPos += 8;
 
-  reportSection1.appendChild(sampleDetailsTitle);
-  reportSection1.appendChild(togetherDiv);
-  reportSection1.appendChild(modelUsed);
-  reportSection1.appendChild(sampleImage);
-  reportSection1.appendChild(sampleCaption);
+    pdf.setFont('helvetica', 'normal');
+    yPos = addWrappedText(`Sample Name: ${imageNameInput}`, margin, yPos, pageWidth - margin * 2, 6);
+    yPos = addWrappedText(`Date Captured: ${new Date().toLocaleDateString()}`, margin, yPos, pageWidth - margin * 2, 6);
+    yPos = addWrappedText(`Model Used: ${selectedModel.toUpperCase()}`, margin, yPos, pageWidth - margin * 2, 6);
 
-  // Analysis Results section
-  const reportSection2 = document.createElement('div');
-  reportSection2.className = 'report-section';
-  reportSection2.style.cssText = 'margin-bottom: 30px;';
-  
-  const analysisResultsTitle = document.createElement('h2');
-  analysisResultsTitle.innerText = 'Analysis Results';
-  analysisResultsTitle.style.cssText = 'color: #333; border-bottom: 1px solid #ccc; padding-bottom: 5px;';
-  
-  const rockCharacteristicsP = document.createElement('p');
-  rockCharacteristicsP.innerText = rockCharacteristics;
-  rockCharacteristicsP.style.cssText = 'line-height: 1.6; margin-bottom: 15px;';
-  
-  const habitabilityAssessmentP = document.createElement('p');
-  habitabilityAssessmentP.innerText = habitabilityAssessment;
-  habitabilityAssessmentP.style.cssText = 'line-height: 1.6;';
+    // Add sample image
+    convertToBase64(analysisImageSrc).then(base64Image => {
+        const imgHeight = 60;
+        if (yPos + imgHeight > pageHeight - margin - 20) {
+            pdf.addPage();
+            addHeader();
+            yPos = margin + 25;
+        }
+        pdf.addImage(base64Image, 'JPEG', margin, yPos, pageWidth - margin * 2, imgHeight);
+        yPos += imgHeight + 6;
+        pdf.setFontSize(10);
+        pdf.text(`Fig.1 ${imageNameInput}_Sample`, pageWidth / 2, yPos, { align: 'center' });
+        yPos += 10;
 
-  reportSection2.appendChild(analysisResultsTitle);
-  reportSection2.appendChild(rockCharacteristicsP);
-  reportSection2.appendChild(habitabilityAssessmentP);
+        // Analysis Results
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        yPos = addWrappedText("Analysis Results", margin, yPos, pageWidth - margin * 2, 6);
 
-  // Analyst Information section
-  const reportSection3 = document.createElement('div');
-  reportSection3.className = 'report-section';
-  reportSection3.style.cssText = 'margin-bottom: 30px;';
-  
-  const analystInfoTitle = document.createElement('h2');
-  analystInfoTitle.innerText = 'Analyst Information';
-  analystInfoTitle.style.cssText = 'color: #333; border-bottom: 1px solid #ccc; padding-bottom: 5px;';
-  
-  const analystCommentP = document.createElement('p');
-  analystCommentP.innerHTML = `<b>Analyst Comment: </b>${analystComment}`;
-  analystCommentP.style.cssText = 'line-height: 1.6; margin-bottom: 15px;';
-  
-  const analystNameP = document.createElement('p');
-  analystNameP.innerHTML = `<b>Analyst Name: </b>${analystName}`;
-  analystNameP.style.cssText = 'line-height: 1.6;';
+        pdf.setFont('helvetica', 'normal');
+        yPos = addWrappedText(`Rock Characteristics: ${rockCharacteristics}`, margin, yPos, pageWidth - margin * 2, 6);
+        yPos = addWrappedText(`Habitability Assessment: ${habitabilityAssessment}`, margin, yPos, pageWidth - margin * 2, 6);
 
-  reportSection3.appendChild(analystInfoTitle);
-  reportSection3.appendChild(analystCommentP);
-  reportSection3.appendChild(analystNameP);
+        // Analyst Information
+        pdf.setFont('helvetica', 'bold');
+        yPos = addWrappedText("Analyst Information", margin, yPos, pageWidth - margin * 2, 6);
 
-  // Signature line section
-  const signatureLine = document.createElement('div');
-  signatureLine.className = 'signature-line';
-  signatureLine.style.cssText = 'margin-top: 50px;';
-  
-  const signatureTitle = document.createElement('p');
-  signatureTitle.innerText = 'Signature:';
-  
-  const signatureLineHr = document.createElement('hr');
-  signatureLineHr.style.cssText = 'width: 300px; margin-left: 0;';
-  
-  signatureLine.appendChild(signatureTitle);
-  signatureLine.appendChild(signatureLineHr);
+        pdf.setFont('helvetica', 'normal');
+        yPos = addWrappedText(`Analyst Comment: ${analystComment}`, margin, yPos, pageWidth - margin * 2, 6);
+        yPos = addWrappedText(`Analyst Name: ${analystName}`, margin, yPos, pageWidth - margin * 2, 6);
 
-  // Footer section
-  const footer = document.createElement('footer');
-  footer.innerHTML = 'Gale Crater Research Station, Latitude -5.4, Longitude 137.8, Mars. blazersteam@gmail.com';
-  footer.style.cssText = 'text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc; font-size: 12px;';
+        // Signature line
+        yPos += 15;
+        pdf.text("Signature:", margin, yPos);
+        pdf.line(margin + 20, yPos, margin + 80, yPos);
 
-  // Append all sections
-  reportContainer.appendChild(letterhead);
-  reportContainer.appendChild(reportSection1);
-  reportContainer.appendChild(reportSection2);
-  reportContainer.appendChild(reportSection3);
-  reportContainer.appendChild(signatureLine);
-  reportContainer.appendChild(footer);
+        // Footer on all pages
+        const totalPages = pdf.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            pdf.setPage(i);
+            addFooter(i, totalPages);
+        }
 
-  // Add to document body temporarily
-  document.body.appendChild(reportContainer);
-
-  // Convert image and generate PDF
-  convertToBase64(analysisImageSrc).then(base64Image => {
-      sampleImage.src = base64Image;
-
-      html2canvas(reportContainer, { scale: 2 }).then(canvas => {
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('p', 'mm', 'a4');
-
-          const imgWidth = 210; // A4 width in mm
-          const pageHeight = 295; // A4 height in mm
-          const imgHeight = canvas.height * imgWidth / canvas.width;
-          const heightLeft = imgHeight - pageHeight;
-
-          let position = 0;
-
-          pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, position, imgWidth, imgHeight);
-
-          if (heightLeft > 0) {
-              pdf.addPage();
-              pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, -pageHeight, imgWidth, imgHeight);
-          }
-
-          pdf.save(`${imageNameInput}_Image_Analysis_Report.pdf`);
-          document.body.removeChild(reportContainer);
-      }).catch(error => {
-          console.error("Error generating PDF:", error);
-          document.body.removeChild(reportContainer);
-      });
-  }).catch(error => {
-      console.error("Error converting image to Base64:", error);
-      document.body.removeChild(reportContainer);
-  });
+        pdf.save(`${imageNameInput}_Image_Analysis_Report.pdf`);
+    }).catch(err => {
+        console.error("Error converting image to Base64:", err);
+    });
 }
+
 
 function convertToBase64(url) {
     return new Promise((resolve, reject) => {
@@ -1105,6 +1175,58 @@ function convertToBase64(url) {
         };
         img.onerror = error => reject(error);
     });
+}
+
+function resetAnalysisDisplay() {
+    const analysisSection = document.getElementById('analysis-section');
+    if (analysisSection) {
+        analysisSection.style.display = 'none';
+    }
+    
+    const propertiesContainer = document.getElementById('properties-container');
+    const lifeSupportContainer = document.getElementById('life-support-container');
+    
+    if (propertiesContainer) {
+        propertiesContainer.innerHTML = '';
+    }
+    if (lifeSupportContainer) {
+        lifeSupportContainer.innerHTML = '';
+    }
+    
+    // Reset form inputs
+    const imageNameInput = document.getElementById('image-name-input');
+    const commentInput = document.getElementById('comment-input');
+    const analystName = document.getElementById('analyst-name');
+    
+    if (imageNameInput) imageNameInput.value = '';
+    if (commentInput) commentInput.value = '';
+    if (analystName) analystName.value = '';
+    
+    // Clear any active reset timer
+    if (resetTimer) {
+        clearTimeout(resetTimer);
+        resetTimer = null;
+    }
+}
+
+function startResetTimer() {
+    // Clear any existing timer
+    if (resetTimer) {
+        clearTimeout(resetTimer);
+    }
+    
+    // Start 20-second countdown
+    resetTimer = setTimeout(() => {
+        resetAnalysisDisplay();
+        resetModelSelection();
+        
+        // If it's an uploaded image, clear it completely
+        if (isUploadedImage) {
+            clearUploadedImage();
+        }
+        
+        resetTimer = null;
+    }, 50000);
 }
 
 // Health check for backend
@@ -1135,7 +1257,7 @@ setInterval(() => {
             roverController.updateConnectionStatus(overallConnected);
         }
     }
-}, 2000);
+}, 20000);
 
 // Export global functions
 window.roverController = roverController;

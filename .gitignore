@@ -7,3 +7,5 @@ rover_env/
 yolov5/
 
 .env
+
+api/

@@ -41,3 +41,11 @@ mypy==1.5.1
 # Monitoring / low-level
 psutil==5.9.5
 cryptography==41.0.4
+
+ultralytics==8.0.196
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python-headless==4.8.1.78
+Pillow==10.0.1
+numpy==1.24.3
+gradio>=4.7.0
