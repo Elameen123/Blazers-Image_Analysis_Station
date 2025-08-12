@@ -1,5 +1,5 @@
-// Enhanced Rover Control System - Manual Capture Only, No Keyboard Shortcuts
-    class RoverController {
+// Enhanced Rover Control System with ESP32-CAM HTTP Stream Integration
+class RoverController {
     constructor() {
         // Use static configuration
         this.API_BASE_URL = window.CONFIG ? window.CONFIG.getApiUrl() : 'https://your-space-name.hf.space';
@@ -12,12 +12,16 @@
             environment: window.CONFIG?.IS_DEVELOPMENT ? 'DEVELOPMENT' : 'PRODUCTION'
         });
         
-        // Rest of your existing constructor code...
+        // ESP32-CAM HTTP Stream Controller
+        this.esp32Cam = null;
+        
+        // Legacy WebSocket properties (kept for compatibility)
         this.websockets = {
             camera: null,
             servo: null,
             command: null
         };
+        
         this.connectionStatus = false;
         this.missionState = {
             autonomous: false,
@@ -27,7 +31,7 @@
         this.objectDetectionRunning = false;
         this.missionLogs = [];
         this.detectionInterval = null;
-        this.currentCameraSource = "webcam";
+        this.currentCameraSource = "esp32"; // Default to ESP32-CAM
         this.localStream = null;
         this.allVideoElements = [];
         
@@ -41,74 +45,36 @@
     
     init() {
         this.initVideoElements();
-        this.initWebSockets();
+        this.initESP32Camera(); // New HTTP stream initialization
+        this.initWebSockets(); // Keep for command interface
         this.startHeartbeat();
         this.initEventListeners();
         this.loadMissionLogsBackup();
         this.initObjectDetectionPanel();
     }
     
+    // Initialize ESP32-CAM HTTP Stream
+    initESP32Camera() {
+        this.esp32Cam = new ESP32CamHTTPController(this.esp32IP, this);
+        console.log('ESP32-CAM HTTP controller initialized');
+    }
+    
     // Initialize and track all video elements for synchronization
     initVideoElements() {
         const webcam = document.getElementById('webcam');
         const roverVideoFeed = document.getElementById('roverVideoFeed');
+        const streamElement = document.getElementById('stream');
         
         this.allVideoElements = [];
         if (webcam) this.allVideoElements.push(webcam);
         if (roverVideoFeed) this.allVideoElements.push(roverVideoFeed);
+        if (streamElement) this.allVideoElements.push(streamElement);
         
-        console.log(`Tracking ${this.allVideoElements.length} video elements for synchronization`);
+        console.log(`Tracking ${this.allVideoElements.length} video elements for ESP32-CAM stream`);
     }
     
     initWebSockets() {
-        // Camera WebSocket
-        const cameraUrl = `ws://${this.esp32IP}/Camera`;
-        console.log("Attempting to connect to camera at:", cameraUrl);
-        
-        this.websockets.camera = new WebSocket(cameraUrl);
-        this.websockets.camera.binaryType = 'blob';
-        
-        this.websockets.camera.onopen = () => {
-            console.log("Camera WebSocket connected");
-            this.updateConnectionStatus(true);
-            this.addStatusLog("Camera feed connected", "good");
-            
-            // Switch to ESP32 camera if connected
-            if (this.currentCameraSource === 'esp32' || this.currentCameraSource === 'webcam') {
-                this.switchCameraSource('esp32');
-            }
-        };
-        
-        this.websockets.camera.onclose = () => {
-            console.log("Camera WebSocket disconnected");
-            this.updateConnectionStatus(false);
-            this.addStatusLog("Camera feed disconnected", "error");
-            
-            // Fallback to local webcam
-            this.switchCameraSource('webcam');
-            
-            // Attempt to reconnect after 3 seconds
-            setTimeout(() => this.initWebSockets(), 3000);
-        };
-        
-        this.websockets.camera.onerror = (error) => {
-            console.error("Camera WebSocket error:", error);
-            this.addStatusLog("Camera connection error", "error");
-        };
-        
-        this.websockets.camera.onmessage = (event) => {
-            if (this.currentCameraSource === 'esp32') {
-                const imageUrl = URL.createObjectURL(event.data);
-                this.updateAllVideoFeeds(imageUrl);
-                
-                // Send frame to Python backend for object detection if running (NO AUTO-CAPTURE)
-                if (this.objectDetectionRunning) {
-                    this.sendFrameForDetection(event.data);
-                }
-            }
-        };
-        
-        // Command WebSocket
+        // Only initialize command WebSocket (camera is handled by HTTP stream)
         const commandUrl = `ws://${this.esp32IP}/Command`;
         console.log("Attempting to connect to command interface at:", commandUrl);
         
@@ -140,25 +106,7 @@
         };
     }
     
-    // Enhanced method to update all video feeds synchronously
-    updateAllVideoFeeds(source) {
-        this.allVideoElements.forEach(videoElement => {
-            if (videoElement) {
-                if (typeof source === 'string') {
-                    // URL source (ESP32 camera)
-                    videoElement.src = source;
-                    videoElement.srcObject = null;
-                } else if (source instanceof MediaStream) {
-                    // Stream source (local webcam)
-                    videoElement.srcObject = source;
-                    videoElement.src = '';
-                    videoElement.play().catch(e => console.log('Video play error:', e));
-                }
-            }
-        });
-    }
-    
-    // Enhanced camera source switching with full synchronization
+    // Enhanced camera source switching (now primarily ESP32-CAM focused)
     switchCameraSource(source) {
         console.log(`Switching camera source from ${this.currentCameraSource} to ${source}`);
         
@@ -176,24 +124,20 @@
                 this.addStatusLog("Switched to local webcam", "good");
                 break;
             case 'esp32':
-                // Clear local stream from all video elements
-                this.allVideoElements.forEach(videoElement => {
-                    if (videoElement) {
-                        videoElement.srcObject = null;
-                        videoElement.src = '';
-                    }
-                });
-                this.addStatusLog("Switched to ESP32 camera", "good");
+                // ESP32-CAM HTTP stream is handled automatically
+                if (this.esp32Cam) {
+                    this.esp32Cam.startStream();
+                }
+                this.addStatusLog("Switched to ESP32-CAM", "good");
                 break;
             case 'external':
-                // For future external camera sources
                 this.addStatusLog("External camera source selected", "warning");
                 break;
             default:
                 this.addStatusLog("Unknown camera source", "error");
         }
         
-        // Update the camera source dropdown to reflect current selection
+        // Update the camera source dropdown
         const cameraSourceSelect = document.getElementById('camera-source-select');
         if (cameraSourceSelect && cameraSourceSelect.value !== source) {
             cameraSourceSelect.value = source;
@@ -216,11 +160,16 @@
                     } 
                 });
                 
-                // Apply stream to all video elements
-                this.updateAllVideoFeeds(this.localStream);
+                // Apply stream to video elements only
+                this.allVideoElements.forEach(element => {
+                    if (element && element.tagName.toLowerCase() === 'video') {
+                        element.srcObject = this.localStream;
+                        element.play().catch(e => console.log('Video play error:', e));
+                    }
+                });
                 
-                this.addStatusLog("Local webcam synchronized across all feeds", "good");
-                console.log('Local webcam initialized and synchronized');
+                this.addStatusLog("Local webcam synchronized", "good");
+                console.log('Local webcam initialized');
             }
         } catch (error) {
             console.error('Error accessing local webcam:', error);
@@ -233,7 +182,6 @@
         if (panel) {
             const objectGrid = document.getElementById('object-grid');
             if (objectGrid) {
-                // Create object buttons with smaller styling for better fit
                 this.detectableObjects.forEach(objName => {
                     const objButton = document.createElement('div');
                     objButton.className = 'detection-object-btn';
@@ -267,13 +215,11 @@
             objButton.style.borderColor = '#ffaa00';
             this.detectedObjects.add(objectClass.toLowerCase());
             
-            // Update detection counter
             const detectionCount = document.getElementById('detection-count');
             if (detectionCount) {
                 detectionCount.textContent = this.detectedObjects.size;
             }
             
-            // Remove highlight after 5 seconds
             setTimeout(() => {
                 objButton.style.background = 'rgba(0, 255, 65, 0.1)';
                 objButton.style.color = '#c95afdff';
@@ -307,10 +253,10 @@
         if (dot && status) {
             if (connected) {
                 dot.classList.add('connected');
-                status.textContent = 'CONNECTED';
+                status.textContent = 'ESP32-CAM CONNECTED';
             } else {
                 dot.classList.remove('connected');
-                status.textContent = 'DISCONNECTED';
+                status.textContent = 'ESP32-CAM DISCONNECTED';
             }
         }
     }
@@ -322,7 +268,6 @@
         
         if (statusLog) {
             const logEntry = document.createElement('div');
-            // Add environment indicator for important messages
             const envIndicator = window.CONFIG?.IS_DEVELOPMENT ? '[DEV] ' : '[PROD] ';
             const finalMessage = ['good', 'error'].includes(type) ? envIndicator + message : message;
             
@@ -330,14 +275,11 @@
             statusLog.appendChild(logEntry);
             statusLog.scrollTop = statusLog.scrollHeight;
             
-            // Limit log entries to prevent memory issues
             while (statusLog.children.length > 50) {
                 statusLog.removeChild(statusLog.firstChild);
             }
         }
     }
-    
-    // Rest of your existing methods remain the same...
     
     updateMissionStatus(data) {
         this.missionState = { ...this.missionState, ...data };
@@ -367,16 +309,14 @@
             if (this.connectionStatus) {
                 this.sendCommand('heartbeat', 'ping');
             }
-        }, 10000); // Every 10 seconds
+        }, 10000);
     }
     
-
     async sendFrameForDetection(frameBlob) {
         try {
             const formData = new FormData();
             formData.append('frame', frameBlob);
             
-            // Use configuration-based URL
             const detectUrl = window.CONFIG ? window.CONFIG.getEndpointUrl('PREDICT') : `${this.API_BASE_URL}/api/predict`;
             
             const response = await fetch(detectUrl, {
@@ -393,8 +333,7 @@
             }
         } catch (error) {
             console.error('Error sending frame for detection:', error);
-            // Don't spam logs with detection errors
-            if (Date.now() % 10000 < 1000) { // Log once every 10 seconds
+            if (Date.now() % 10000 < 1000) {
                 this.addStatusLog("Detection service unavailable", "warning");
             }
         }
@@ -408,35 +347,26 @@
         if (result.objects && result.objects.length > 0) {
             const primaryObject = result.objects[0];
             
-            // Update depth display
             if (depthDisplay) {
                 const detectionText = `DETECTED: ${primaryObject.class.toUpperCase()} (${(primaryObject.confidence * 100).toFixed(1)}%)`;
                 depthDisplay.innerHTML = detectionText;
                 depthDisplay.style.color = '#ffaa00';
             }
             
-            // Update camera icon
             if (cameraIcon) {
                 cameraIcon.style.color = 'red';
             }
             
-            // Update mission control target
             if (currentTarget) {
                 currentTarget.textContent = `${primaryObject.class.toUpperCase()} DETECTED`;
             }
             
-            // Highlight detected object in panel
             this.highlightDetectedObject(primaryObject.class);
-            
-            // Log detection
             this.addStatusLog(`Detected: ${primaryObject.class} (${(primaryObject.confidence * 100).toFixed(1)}%)`, "warning");
             
-            // NO AUTO-CAPTURE - Only manual capture allowed
-            // Mission objects are only logged, not auto-captured
             const missionObjects = ['hammer', 'tennis_ball', 'traffic_cone', 'balloon'];
             if (missionObjects.some(obj => primaryObject.class.toLowerCase().includes(obj))) {
                 this.addStatusLog(`MISSION OBJECT FOUND: ${primaryObject.class} - MANUAL CAPTURE REQUIRED`, "warning");
-                // Flash camera icon to indicate mission object detected
                 if (cameraIcon) {
                     cameraIcon.style.animation = 'flash 1s infinite';
                     setTimeout(() => {
@@ -445,13 +375,10 @@
                 }
             }
             
-            // Process navigation guidance for autonomous mode
             if (result.navigation && this.missionState.autonomous) {
                 this.processNavigationGuidance(result.navigation);
             }
-            
         } else {
-            // No objects detected
             if (depthDisplay) {
                 depthDisplay.innerHTML = "SCANNING FOR OBJECTS...";
                 depthDisplay.style.color = '#00ff41';
@@ -473,7 +400,6 @@
         
         this.addStatusLog(`Navigation: ${guidance.message}`, "good");
         
-        // Auto-execute navigation commands
         switch (guidance.action) {
             case 'move_forward':
                 this.sendCommand('move', 'forward');
@@ -488,27 +414,59 @@
                 setTimeout(() => this.sendCommand('move', 'stop'), 300);
                 break;
             case 'continue_search':
-                // Continue current movement pattern
                 break;
         }
     }
     
-    // Enhanced screenshot method using the current active video feed - MANUAL ONLY
+    // Enhanced screenshot method using ESP32-CAM
     async takeScreenshot(objectDetected = "Manual", depth = 1.5) {
-        // Use the first available video element with active feed
+        let frameBlob = null;
+        
+        // Try to get frame from ESP32-CAM first
+        if (this.esp32Cam && this.esp32Cam.isConnected) {
+            frameBlob = await this.esp32Cam.getCurrentFrameBlob();
+            this.addStatusLog(`Screenshot from ESP32-CAM: ${objectDetected}`, "good");
+        }
+        
+        // Fallback to local webcam
+        if (!frameBlob && this.currentCameraSource === 'webcam') {
+            frameBlob = await this.captureFromVideoElement();
+            this.addStatusLog(`Screenshot from webcam: ${objectDetected}`, "good");
+        }
+        
+        if (frameBlob) {
+            console.log("Screenshot taken for:", objectDetected);
+            
+            try {
+                const timestamp = Date.now();
+                const storageRef = window.firebaseRefs.ref(window.firebaseStorage, `EXPLORATION_SAMPLES/screenshot_${timestamp}.png`);
+                
+                await window.firebaseRefs.uploadBytes(storageRef, frameBlob);
+                const downloadURL = await window.firebaseRefs.getDownloadURL(storageRef);
+                await this.updateDatabaseWithImage(downloadURL, depth, objectDetected);
+                
+            } catch (error) {
+                console.error('Error saving screenshot:', error);
+                this.addStatusLog("Screenshot save failed", "error");
+            }
+        } else {
+            this.addStatusLog("No frame available for screenshot", "error");
+        }
+    }
+    
+    // Fallback method to capture from video element
+    async captureFromVideoElement() {
         let activeVideo = null;
         
         for (const video of this.allVideoElements) {
-            if (video && (video.srcObject || video.src) && video.readyState >= video.HAVE_CURRENT_DATA) {
+            if (video && video.tagName.toLowerCase() === 'video' && 
+                video.srcObject && video.readyState >= video.HAVE_CURRENT_DATA) {
                 activeVideo = video;
                 break;
             }
         }
         
-        if (!activeVideo) {
-            this.addStatusLog("No active video feed available for screenshot", "error");
-            return;
-        }
+        if (!activeVideo) return null;
         
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -517,64 +475,46 @@
         
         try {
             context.drawImage(activeVideo, 0, 0, canvas.width, canvas.height);
-
-            canvas.toBlob(async (blob) => {
-                if (blob) {
-                    console.log("Manual screenshot taken for:", objectDetected);
-                    this.addStatusLog(`Manual screenshot captured: ${objectDetected} (${this.currentCameraSource.toUpperCase()})`, "good");
-                    
-                    try {
-                        const timestamp = Date.now();
-                        const storageRef = window.firebaseRefs.ref(window.firebaseStorage, `EXPLORATION_SAMPLES/screenshot_${timestamp}.png`);
-         
-                        await window.firebaseRefs.uploadBytes(storageRef, blob);
-                        const downloadURL = await window.firebaseRefs.getDownloadURL(storageRef);
-                        await this.updateDatabaseWithImage(downloadURL, depth, objectDetected);
-                        
-                    } catch (error) {
-                        console.error('Error saving screenshot:', error);
-                        this.addStatusLog("Screenshot save failed", "error");
-                    }
-                }
-            }, 'image/png');
+            
+            return new Promise((resolve) => {
+                canvas.toBlob(resolve, 'image/png');
+            });
         } catch (error) {
-            console.error('Error capturing screenshot:', error);
-            this.addStatusLog("Screenshot capture failed", "error");
+            console.error('Error capturing from video element:', error);
+            return null;
         }
     }
     
-   async updateDatabaseWithImage(imageUrl, depth, objectDetected) {
-    try {
-        const userCredential = await window.firebaseRefs.signInWithEmailAndPassword(
-            window.firebaseAuth, 
-            'lanre.mohammed23@gmail.com', 
-            'Wilmar.jr7'
-        );
-        
-        const videoImageRef = window.firebaseRefs.dbRef(window.firebaseDatabase, 'Samples/');
-        const timestamp = Date.now();
-        const imagePath = imageUrl;
-        
-        await window.firebaseRefs.update(window.firebaseRefs.child(videoImageRef, timestamp.toString()), {
-            object: objectDetected,
-            image_name: `manual_capture_${objectDetected}_${timestamp}`,
-            image: imagePath, // Store just the path, not the full URL
-            timestamp: timestamp,
-            depth: depth,
-            mode: 'exploration_manual',
-            camera_source: this.currentCameraSource,
-            analyst_name: 'Rover System',
-            analyst_comment: `Manually captured during exploration mission. Context: ${objectDetected}. Source: ${this.currentCameraSource.toUpperCase()}`
-        });
+    async updateDatabaseWithImage(imageUrl, depth, objectDetected) {
+        try {
+            const userCredential = await window.firebaseRefs.signInWithEmailAndPassword(
+                window.firebaseAuth, 
+                'lanre.mohammed23@gmail.com', 
+                'Wilmar.jr7'
+            );
+            
+            const videoImageRef = window.firebaseRefs.dbRef(window.firebaseDatabase, 'Samples/');
+            const timestamp = Date.now();
+            
+            await window.firebaseRefs.update(window.firebaseRefs.child(videoImageRef, timestamp.toString()), {
+                object: objectDetected,
+                image_name: `manual_capture_${objectDetected}_${timestamp}`,
+                image: imageUrl,
+                timestamp: timestamp,
+                depth: depth,
+                mode: 'exploration_manual',
+                camera_source: this.currentCameraSource,
+                analyst_name: 'Rover System',
+                analyst_comment: `Manually captured during exploration mission. Context: ${objectDetected}. Source: ${this.currentCameraSource.toUpperCase()}`
+            });
 
-        this.addStatusLog("Manual capture uploaded to database", "good");
-        
-    } catch (error) {
-        console.error('Database update error:', error);
-        this.addStatusLog("Database update failed", "error");
+            this.addStatusLog("Manual capture uploaded to database", "good");
+            
+        } catch (error) {
+            console.error('Database update error:', error);
+            this.addStatusLog("Database update failed", "error");
+        }
     }
-}
-
     
     startObjectDetection() {
         if (this.objectDetectionRunning) return;
@@ -582,7 +522,6 @@
         this.objectDetectionRunning = true;
         this.addStatusLog(`Object detection started using ${this.currentCameraSource.toUpperCase()} - MANUAL CAPTURE ONLY`, "good");
         
-        // Send frames every 2 seconds to avoid overloading
         this.detectionInterval = setInterval(async () => {
             if (this.objectDetectionRunning) {
                 await this.captureAndAnalyzeFrame();
@@ -598,7 +537,6 @@
         }
         this.addStatusLog("Object detection stopped", "warning");
         
-        // Clear all highlighted objects
         const detectedButtons = document.querySelectorAll('.detection-object-btn');
         detectedButtons.forEach(btn => {
             btn.style.background = 'rgba(0, 255, 65, 0.1)';
@@ -606,7 +544,6 @@
             btn.style.borderColor = '#00ff41';
         });
         
-        // Reset detection counter
         const detectionCount = document.getElementById('detection-count');
         if (detectionCount) {
             detectionCount.textContent = '0';
@@ -614,39 +551,21 @@
         this.detectedObjects.clear();
     }
     
-    // Enhanced frame capture using current active video source
     async captureAndAnalyzeFrame() {
-        // Find the active video element
-        let activeVideo = null;
+        let frameBlob = null;
         
-        for (const video of this.allVideoElements) {
-            if (video && (video.srcObject || video.src) && video.readyState >= video.HAVE_CURRENT_DATA) {
-                activeVideo = video;
-                break;
-            }
+        // Get frame from ESP32-CAM first
+        if (this.esp32Cam && this.esp32Cam.isConnected) {
+            frameBlob = await this.esp32Cam.getCurrentFrameBlob();
         }
         
-        if (!activeVideo) {
-            console.warn('No active video feed for frame analysis');
-            return;
+        // Fallback to webcam
+        if (!frameBlob && this.currentCameraSource === 'webcam') {
+            frameBlob = await this.captureFromVideoElement();
         }
         
-        try {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = activeVideo.videoWidth || 640;
-            canvas.height = activeVideo.videoHeight || 480;
-            
-            ctx.drawImage(activeVideo, 0, 0, canvas.width, canvas.height);
-            
-            canvas.toBlob(async (blob) => {
-                if (blob) {
-                    await this.sendFrameForDetection(blob);
-                }
-            }, 'image/jpeg', 0.8);
-            
-        } catch (error) {
-            console.error('Error capturing frame for analysis:', error);
+        if (frameBlob && this.objectDetectionRunning) {
+            await this.sendFrameForDetection(frameBlob);
         }
     }
     
@@ -676,7 +595,6 @@
             });
         }
         
-        // Close modal with outside click
         if (modal) {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
@@ -687,7 +605,7 @@
             });
         }
         
-        // Mission control buttons with enhanced functionality and smaller styling
+        // Mission control buttons
         const buttons = {
             'startAutonomous': () => {
                 this.missionState.autonomous = !this.missionState.autonomous;
@@ -723,7 +641,6 @@
         Object.entries(buttons).forEach(([id, action]) => {
             const btn = document.getElementById(id);
             if (btn) {
-                // Make autonomous control buttons smaller
                 if (['startAutonomous', 'startMission', 'toggleSweep', 'resetSequence', 'abortMission'].includes(id)) {
                     btn.style.cssText += `
                         font-size: 0.8rem;
@@ -735,9 +652,6 @@
                 btn.addEventListener('click', action);
             }
         });
-        
-       
-    
         
         // Mission log functionality
         const addLogBtn = document.getElementById('addLogEntry');
@@ -782,7 +696,6 @@
             logEntries.appendChild(logEntry);
             logEntries.scrollTop = logEntries.scrollHeight;
             
-            // Limit log entries
             while (logEntries.children.length > 20) {
                 logEntries.removeChild(logEntries.firstChild);
             }
@@ -799,7 +712,6 @@
                 timestamp: Date.now(),
                 missionState: this.missionState
             };
-            // Using a simple storage mechanism
             window.missionBackup = backupData;
         } catch (error) {
             console.warn('Could not save mission logs backup:', error);
@@ -810,12 +722,10 @@
         try {
             if (window.missionBackup) {
                 const data = window.missionBackup;
-                // Load logs if they're from today
                 if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
                     this.missionLogs = data.logs || [];
                     this.missionState = { ...this.missionState, ...data.missionState };
                     
-                    // Restore log entries to UI
                     const logEntries = document.getElementById('logEntries');
                     if (logEntries && this.missionLogs.length > 0) {
                         this.missionLogs.forEach(log => {
@@ -833,67 +743,530 @@
         }
     }
     
-    // Health check for backend services
-  async checkBackendHealth() {
-    try {
-        const healthUrl = window.CONFIG 
-            ? window.CONFIG.getEndpointUrl('HEALTH') 
-            : `${this.API_BASE_URL}/api/health`;
+    async checkBackendHealth() {
+        try {
+            const healthUrl = window.CONFIG 
+                ? window.CONFIG.getEndpointUrl('HEALTH') 
+                : `${this.API_BASE_URL}/api/health`;
 
-        const response = await fetch(healthUrl, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' }
-        });
+            const response = await fetch(healthUrl, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
 
-        // Check status
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+            }
+
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error(`Expected JSON, got: ${contentType}`);
+            }
+
+            const health = await response.json();
+            this.addStatusLog("Object detection backend online", "good");
+            console.log('✅ Backend health check passed:', health);
+            return true;
+
+        } catch (error) {
+            this.addStatusLog("Backend not available - using fallback mode", "warning");
+            console.error('❌ Backend health check error:', error);
+            return false;
         }
-
-        // Check content type to avoid HTML parsing errors
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-            throw new Error(`Expected JSON, got: ${contentType}`);
-        }
-
-        const health = await response.json();
-        this.addStatusLog("Object detection backend online", "good");
-        console.log('✅ Backend health check passed:', health);
-        return true;
-
-    } catch (error) {
-        this.addStatusLog("Backend not available - using fallback mode", "warning");
-        console.error('❌ Backend health check error:', error);
-        return false;
     }
-}
-
     
-    // Enhanced method to get current active camera info
     getCurrentCameraInfo() {
         return {
             source: this.currentCameraSource,
-            connected: this.connectionStatus,
+            connected: this.esp32Cam ? this.esp32Cam.isConnected : false,
             activeElements: this.allVideoElements.filter(v => v && (v.srcObject || v.src)).length,
             totalElements: this.allVideoElements.length,
             detectionRunning: this.objectDetectionRunning
         };
     }
     
-    // Method to manually sync camera feeds (for debugging)
     forceCameraSync() {
         console.log('Forcing camera synchronization...');
         this.addStatusLog("Forcing camera synchronization", "warning");
         
         if (this.currentCameraSource === 'webcam' && this.localStream) {
-            this.updateAllVideoFeeds(this.localStream);
-        } else if (this.currentCameraSource === 'esp32' && this.connectionStatus) {
-            // ESP32 feeds are handled by WebSocket messages
-            this.addStatusLog("ESP32 feed sync requested", "good");
+            this.allVideoElements.forEach(element => {
+                if (element && element.tagName.toLowerCase() === 'video') {
+                    element.srcObject = this.localStream;
+                    element.play().catch(e => console.log('Video play error:', e));
+                }
+            });
+        } else if (this.currentCameraSource === 'esp32' && this.esp32Cam) {
+            this.esp32Cam.startStream();
         }
         
         const info = this.getCurrentCameraInfo();
         console.log('Camera sync info:', info);
+    }
+}
+
+// ESP32-CAM HTTP Controller Class
+class ESP32CamHTTPController {
+    constructor(esp32IP, parentController) {
+        this.esp32IP = esp32IP || "192.168.0.102";
+        this.streamPort = 80;
+        this.parentController = parentController;
+        
+        // Stream endpoints based on ESP32-CAM web server
+        this.endpoints = {
+            stream: `http://${this.esp32IP}:${this.streamPort}/stream`,
+            capture: `http://${this.esp32IP}:${this.streamPort}/capture`,
+            status: `http://${this.esp32IP}:${this.streamPort}/status`,
+            control: `http://${this.esp32IP}:${this.streamPort}/control`
+        };
+        
+        this.isConnected = false;
+        this.videoElements = [];
+        this.connectionCheckInterval = null;
+        this.streamImg = null;
+        this.retryCount = 0;
+        this.maxRetries = 5;
+        
+        console.log('ESP32-CAM HTTP Controller initialized with IP:', this.esp32IP);
+        this.init();
+    }
+    
+    init() {
+        this.findVideoElements();
+        this.createStreamImage();
+        this.startConnectionMonitoring();
+        this.setupEventListeners();
+    }
+    
+    findVideoElements() {
+        // Find all elements that should show the ESP32-CAM stream
+        const videoSelectors = [
+            '#webcam',
+            '#roverVideoFeed', 
+            '#stream',
+            '.camera-feed',
+            '[data-camera="esp32"]'
+        ];
+        
+        this.videoElements = [];
+        videoSelectors.forEach(selector => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(el => {
+                if (el && !this.videoElements.includes(el)) {
+                    this.videoElements.push(el);
+                }
+            });
+        });
+        
+        console.log(`Found ${this.videoElements.length} elements for ESP32-CAM stream`);
+    }
+    
+    createStreamImage() {
+        // Create a hidden image element to handle the MJPEG stream
+        this.streamImg = document.createElement('img');
+        this.streamImg.style.display = 'none';
+        this.streamImg.crossOrigin = 'anonymous';
+        this.streamImg.id = 'esp32-stream-handler';
+        document.body.appendChild(this.streamImg);
+        
+        // Handle stream load events
+        this.streamImg.onload = () => {
+            if (!this.isConnected) {
+                this.isConnected = true;
+                this.retryCount = 0;
+                this.updateConnectionStatus(true);
+                console.log('✅ ESP32-CAM stream connected');
+            }
+            this.updateVideoElements();
+        };
+        
+        this.streamImg.onerror = () => {
+            if (this.isConnected) {
+                this.isConnected = false;
+                this.updateConnectionStatus(false);
+                console.log('❌ ESP32-CAM stream error');
+            }
+            this.handleStreamError();
+        };
+    }
+    
+    startStream() {
+        console.log('Starting ESP32-CAM HTTP stream...');
+        console.log('Stream URL:', this.endpoints.stream);
+        
+        // Add timestamp to prevent caching issues
+        const streamUrl = `${this.endpoints.stream}?t=${Date.now()}`;
+        
+        // Set the stream source
+        this.streamImg.src = streamUrl;
+        
+        // Also directly set video/img elements to the stream
+        this.videoElements.forEach(element => {
+            if (element) {
+                if (element.tagName.toLowerCase() === 'img') {
+                    element.src = streamUrl;
+                    element.onerror = () => this.handleElementError(element);
+                } else if (element.tagName.toLowerCase() === 'video') {
+                    // For video elements showing MJPEG stream
+                    element.src = streamUrl;
+                    element.load();
+                    element.onerror = () => this.handleElementError(element);
+                }
+            }
+        });
+        
+        if (this.parentController) {
+            this.parentController.addStatusLog("Starting ESP32-CAM stream", "good");
+        }
+    }
+    
+    stopStream() {
+        console.log('Stopping ESP32-CAM stream');
+        
+        if (this.streamImg) {
+            this.streamImg.src = '';
+        }
+        
+        this.videoElements.forEach(element => {
+            if (element) {
+                element.src = '';
+                if (element.tagName.toLowerCase() === 'video') {
+                    element.load();
+                }
+            }
+        });
+        
+        this.isConnected = false;
+        this.updateConnectionStatus(false);
+        
+        if (this.parentController) {
+            this.parentController.addStatusLog("ESP32-CAM stream stopped", "warning");
+        }
+    }
+    
+    handleStreamError() {
+        this.retryCount++;
+        if (this.retryCount <= this.maxRetries) {
+            const retryDelay = Math.min(1000 * Math.pow(2, this.retryCount), 10000); // Exponential backoff
+            console.log(`ESP32-CAM stream retry ${this.retryCount}/${this.maxRetries} in ${retryDelay}ms`);
+            
+            if (this.parentController) {
+                this.parentController.addStatusLog(`ESP32-CAM retry ${this.retryCount}/${this.maxRetries}`, "warning");
+            }
+            
+            setTimeout(() => {
+                if (this.retryCount <= this.maxRetries) {
+                    this.startStream();
+                }
+            }, retryDelay);
+        } else {
+            console.error('ESP32-CAM stream failed after maximum retries');
+            if (this.parentController) {
+                this.parentController.addStatusLog("ESP32-CAM stream failed - check connection", "error");
+            }
+        }
+    }
+    
+    handleElementError(element) {
+        console.warn('Stream element error:', element.id || element.tagName);
+        // Try to reload the element after a short delay
+        setTimeout(() => {
+            if (this.isConnected && element) {
+                element.src = `${this.endpoints.stream}?t=${Date.now()}`;
+                if (element.tagName.toLowerCase() === 'video') {
+                    element.load();
+                }
+            }
+        }, 2000);
+    }
+    
+    updateVideoElements() {
+        // Update all video elements with the current stream
+        const timestamp = Date.now();
+        const streamUrl = `${this.endpoints.stream}?t=${timestamp}`;
+        
+        this.videoElements.forEach(element => {
+            if (element && this.isConnected) {
+                if (element.tagName.toLowerCase() === 'img') {
+                    element.src = streamUrl;
+                } else if (element.tagName.toLowerCase() === 'video') {
+                    element.src = streamUrl;
+                }
+            }
+        });
+    }
+    
+    startConnectionMonitoring() {
+        // Check connection every 10 seconds
+        this.connectionCheckInterval = setInterval(async () => {
+            const isAlive = await this.checkConnection();
+            
+            if (isAlive && !this.isConnected) {
+                console.log('ESP32-CAM detected - starting stream');
+                this.startStream();
+            } else if (!isAlive && this.isConnected) {
+                console.log('ESP32-CAM connection lost');
+                this.isConnected = false;
+                this.updateConnectionStatus(false);
+            }
+        }, 10000);
+        
+        // Initial connection attempt after 2 seconds
+        setTimeout(() => this.startStream(), 2000);
+    }
+    
+    async checkConnection() {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
+            // Try to fetch the main page instead of status (which might not exist)
+            const response = await fetch(`http://${this.esp32IP}:${this.streamPort}/`, {
+                method: 'HEAD', // Use HEAD to minimize data transfer
+                signal: controller.signal,
+                cache: 'no-cache'
+            });
+            
+            clearTimeout(timeoutId);
+            return response.ok || response.status === 404; // 404 is OK, means server is responding
+        } catch (error) {
+            return false;
+        }
+    }
+    
+    updateConnectionStatus(connected) {
+        this.isConnected = connected;
+        
+        // Update parent controller's connection status
+        if (this.parentController) {
+            this.parentController.updateConnectionStatus(connected);
+        }
+        
+        console.log(`ESP32-CAM connection status: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`);
+    }
+    
+    // Capture a single frame from the ESP32-CAM
+    async captureFrame() {
+        try {
+            const response = await fetch(this.endpoints.capture, {
+                cache: 'no-cache'
+            });
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                console.log('Frame captured from ESP32-CAM');
+                return blob;
+            } else {
+                throw new Error(`Capture failed: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error capturing frame from ESP32-CAM:', error);
+            return null;
+        }
+    }
+    
+    // Get current frame as canvas (for analysis)
+    getCurrentFrameCanvas() {
+        return new Promise((resolve) => {
+            if (!this.streamImg || !this.streamImg.complete || !this.isConnected) {
+                resolve(null);
+                return;
+            }
+            
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                canvas.width = this.streamImg.naturalWidth || 640;
+                canvas.height = this.streamImg.naturalHeight || 480;
+                
+                ctx.drawImage(this.streamImg, 0, 0, canvas.width, canvas.height);
+                resolve(canvas);
+            } catch (error) {
+                console.error('Error creating canvas from stream:', error);
+                resolve(null);
+            }
+        });
+    }
+    
+    // Get current frame as blob (for sending to backend)
+    async getCurrentFrameBlob() {
+        // Try capture endpoint first (better quality)
+        let frameBlob = await this.captureFrame();
+        
+        if (!frameBlob) {
+            // Fallback to canvas capture from stream
+            const canvas = await this.getCurrentFrameCanvas();
+            if (canvas) {
+                frameBlob = await new Promise((resolve) => {
+                    canvas.toBlob(resolve, 'image/jpeg', 0.8);
+                });
+            }
+        }
+        
+        return frameBlob;
+    }
+    
+    // Camera control methods (ESP32-CAM web server supports these)
+    async setCameraParameter(parameter, value) {
+        try {
+            const url = `${this.endpoints.control}?var=${parameter}&val=${value}`;
+            const response = await fetch(url, { cache: 'no-cache' });
+            
+            if (response.ok) {
+                console.log(`Camera parameter ${parameter} set to ${value}`);
+                if (this.parentController) {
+                    this.parentController.addStatusLog(`Camera ${parameter}: ${value}`, "good");
+                }
+                return true;
+            } else {
+                throw new Error(`Failed to set ${parameter}: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error setting camera parameter:', error);
+            if (this.parentController) {
+                this.parentController.addStatusLog(`Camera control error: ${parameter}`, "error");
+            }
+            return false;
+        }
+    }
+    
+    // Convenience methods for common camera adjustments
+    async setBrightness(value) { // -2 to 2
+        return this.setCameraParameter('brightness', Math.max(-2, Math.min(2, value)));
+    }
+    
+    async setContrast(value) { // -2 to 2
+        return this.setCameraParameter('contrast', Math.max(-2, Math.min(2, value)));
+    }
+    
+    async setSaturation(value) { // -2 to 2
+        return this.setCameraParameter('saturation', Math.max(-2, Math.min(2, value)));
+    }
+    
+    async setFrameSize(value) { // 0-10 (FRAMESIZE_96X96 to FRAMESIZE_UXGA)
+        const success = await this.setCameraParameter('framesize', Math.max(0, Math.min(10, value)));
+        if (success) {
+            // Restart stream after frame size change
+            setTimeout(() => {
+                this.stopStream();
+                setTimeout(() => this.startStream(), 1000);
+            }, 500);
+        }
+        return success;
+    }
+    
+    async setQuality(value) { // 10-63 (lower = better quality)
+        return this.setCameraParameter('quality', Math.max(10, Math.min(63, value)));
+    }
+    
+    async setSpecialEffect(value) { // 0-6 (No Effect, Negative, Grayscale, etc.)
+        return this.setCameraParameter('special_effect', Math.max(0, Math.min(6, value)));
+    }
+    
+    async setWhiteBalance(value) { // 0-4 (Auto, Sunny, Cloudy, Office, Home)
+        return this.setCameraParameter('wb_mode', Math.max(0, Math.min(4, value)));
+    }
+    
+    setupEventListeners() {
+        // Camera control UI elements (if they exist)
+        const controls = [
+            { id: 'esp32-brightness', method: 'setBrightness', min: -2, max: 2 },
+            { id: 'esp32-contrast', method: 'setContrast', min: -2, max: 2 },
+            { id: 'esp32-saturation', method: 'setSaturation', min: -2, max: 2 },
+            { id: 'esp32-quality', method: 'setQuality', min: 10, max: 63 },
+            { id: 'esp32-framesize', method: 'setFrameSize', min: 0, max: 10 },
+            { id: 'esp32-special-effect', method: 'setSpecialEffect', min: 0, max: 6 },
+            { id: 'esp32-white-balance', method: 'setWhiteBalance', min: 0, max: 4 }
+        ];
+        
+        controls.forEach(({ id, method, min, max }) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', (e) => {
+                    const value = parseInt(e.target.value);
+                    const clampedValue = Math.max(min, Math.min(max, value));
+                    this[method](clampedValue);
+                });
+            }
+        });
+        
+        // Manual reconnect button
+        const reconnectBtn = document.getElementById('reconnect-esp32');
+        if (reconnectBtn) {
+            reconnectBtn.addEventListener('click', () => {
+                console.log('Manual ESP32-CAM reconnect requested');
+                this.retryCount = 0;
+                this.stopStream();
+                setTimeout(() => this.startStream(), 1000);
+            });
+        }
+        
+        // Stream quality preset buttons
+        const presetButtons = {
+            'esp32-preset-high': () => this.applyPreset('high'),
+            'esp32-preset-medium': () => this.applyPreset('medium'),
+            'esp32-preset-low': () => this.applyPreset('low')
+        };
+        
+        Object.entries(presetButtons).forEach(([id, action]) => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.addEventListener('click', action);
+            }
+        });
+    }
+    
+    async applyPreset(preset) {
+        console.log(`Applying ESP32-CAM preset: ${preset}`);
+        
+        switch (preset) {
+            case 'high':
+                await this.setQuality(10); // Best quality
+                await this.setFrameSize(9); // SXGA (1280x1024)
+                break;
+            case 'medium':
+                await this.setQuality(20);
+                await this.setFrameSize(7); // VGA (640x480)
+                break;
+            case 'low':
+                await this.setQuality(40);
+                await this.setFrameSize(5); // CIF (400x296)
+                break;
+        }
+        
+        if (this.parentController) {
+            this.parentController.addStatusLog(`Applied ${preset} quality preset`, "good");
+        }
+    }
+    
+    // Get camera status info
+    getCameraInfo() {
+        return {
+            connected: this.isConnected,
+            ip: this.esp32IP,
+            streamUrl: this.endpoints.stream,
+            retryCount: this.retryCount,
+            maxRetries: this.maxRetries,
+            videoElements: this.videoElements.length
+        };
+    }
+    
+    // Cleanup method
+    destroy() {
+        if (this.connectionCheckInterval) {
+            clearInterval(this.connectionCheckInterval);
+            this.connectionCheckInterval = null;
+        }
+        
+        this.stopStream();
+        
+        if (this.streamImg && this.streamImg.parentNode) {
+            this.streamImg.parentNode.removeChild(this.streamImg);
+            this.streamImg = null;
+        }
+        
+        console.log('ESP32-CAM HTTP Controller destroyed');
     }
 }
 
