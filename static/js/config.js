@@ -14,7 +14,7 @@ const CONFIG = {
             FALLBACK_API: 'https://elameen123-blazers-image-analysis-station.hf.space'
         },
         PRODUCTION: {
-            // You'll replace this with your actual Hugging Face Space URL
+            // You'll replace this with your actual Hugging Face Space URL to use
             HUGGINGFACE_API: 'https://elameen123-blazers-image-analysis-station.hf.space',
             FALLBACK_API: 'https://elameen123-blazers-image-analysis-station.hf.space'
         }
