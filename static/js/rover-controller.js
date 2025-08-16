@@ -1,21 +1,23 @@
-// Enhanced Rover Control System with ESP32-CAM HTTP Stream Integration
+// Enhanced Rover Control System with ESP32-CAM HTTPS Proxy Integration
 class RoverController {
     constructor() {
         // Use static configuration
         this.API_BASE_URL = window.CONFIG ? window.CONFIG.getApiUrl() : 'https://your-space-name.hf.space';
         this.esp32IP = window.CONFIG ? window.CONFIG.ESP32_IP : "192.168.0.102";
+        this.useProxy = window.CONFIG ? window.CONFIG.ESP32_CONFIG.USE_PROXY : true;
         
         // Log the configuration being used
-        console.log('🤖 RoverController initialized with:', {
+        console.log('RoverController initialized with:', {
             apiBaseUrl: this.API_BASE_URL,
             esp32IP: this.esp32IP,
+            useProxy: this.useProxy,
             environment: window.CONFIG?.IS_DEVELOPMENT ? 'DEVELOPMENT' : 'PRODUCTION'
         });
         
-        // ESP32-CAM HTTP Stream Controller
+        // ESP32-CAM HTTPS Proxy Controller
         this.esp32Cam = null;
         
-        // Legacy WebSocket properties (kept for compatibility)
+        // WebSocket properties (now uses proxy when needed)
         this.websockets = {
             camera: null,
             servo: null,
@@ -45,18 +47,18 @@ class RoverController {
     
     init() {
         this.initVideoElements();
-        this.initESP32Camera(); // New HTTP stream initialization
-        this.initWebSockets(); // Keep for command interface
+        this.initESP32Camera(); // HTTPS proxy initialization
+        this.initWebSockets(); // Now uses proxy when needed
         this.startHeartbeat();
         this.initEventListeners();
         this.loadMissionLogsBackup();
         this.initObjectDetectionPanel();
     }
     
-    // Initialize ESP32-CAM HTTP Stream
+    // Initialize ESP32-CAM HTTPS Proxy Controller
     initESP32Camera() {
-        this.esp32Cam = new ESP32CamHTTPController(this.esp32IP, this);
-        console.log('ESP32-CAM HTTP controller initialized');
+        this.esp32Cam = new ESP32CamProxyController(this.esp32IP, this, this.useProxy);
+        console.log('ESP32-CAM controller initialized with proxy support');
     }
     
     // Initialize and track all video elements for synchronization
@@ -74,8 +76,11 @@ class RoverController {
     }
     
     initWebSockets() {
-        // Only initialize command WebSocket (camera is handled by HTTP stream)
-        const commandUrl = `ws://${this.esp32IP}/Command`;
+        // Use proxy WebSocket URL when proxy is enabled
+        const commandUrl = window.CONFIG ? 
+            window.CONFIG.getCommandWebSocketUrl() : 
+            `ws://${this.esp32IP}/Command`;
+            
         console.log("Attempting to connect to command interface at:", commandUrl);
         
         this.websockets.command = new WebSocket(commandUrl);
@@ -106,7 +111,7 @@ class RoverController {
         };
     }
     
-    // Enhanced camera source switching (now primarily ESP32-CAM focused)
+    // Enhanced camera source switching (now supports HTTPS proxy)
     switchCameraSource(source) {
         console.log(`Switching camera source from ${this.currentCameraSource} to ${source}`);
         
@@ -124,7 +129,7 @@ class RoverController {
                 this.addStatusLog("Switched to local webcam", "good");
                 break;
             case 'esp32':
-                // ESP32-CAM HTTP stream is handled automatically
+                // ESP32-CAM HTTPS proxy stream is handled automatically
                 if (this.esp32Cam) {
                     this.esp32Cam.startStream();
                 }
@@ -268,8 +273,9 @@ class RoverController {
         
         if (statusLog) {
             const logEntry = document.createElement('div');
+            const proxyIndicator = this.useProxy ? '[PROXY] ' : '[DIRECT] ';
             const envIndicator = window.CONFIG?.IS_DEVELOPMENT ? '[DEV] ' : '[PROD] ';
-            const finalMessage = ['good', 'error'].includes(type) ? envIndicator + message : message;
+            const finalMessage = ['good', 'error'].includes(type) ? envIndicator + proxyIndicator + message : message;
             
             logEntry.innerHTML = `<span class="timestamp">${timestamp}</span><span class="status-${type}">${finalMessage.toUpperCase()}</span>`;
             statusLog.appendChild(logEntry);
@@ -418,11 +424,11 @@ class RoverController {
         }
     }
     
-    // Enhanced screenshot method using ESP32-CAM
+    // Enhanced screenshot method using ESP32-CAM proxy
     async takeScreenshot(objectDetected = "Manual", depth = 1.5) {
         let frameBlob = null;
         
-        // Try to get frame from ESP32-CAM first
+        // Try to get frame from ESP32-CAM first (via proxy)
         if (this.esp32Cam && this.esp32Cam.isConnected) {
             frameBlob = await this.esp32Cam.getCurrentFrameBlob();
             this.addStatusLog(`Screenshot from ESP32-CAM: ${objectDetected}`, "good");
@@ -504,8 +510,9 @@ class RoverController {
                 depth: depth,
                 mode: 'exploration_manual',
                 camera_source: this.currentCameraSource,
+                connection_type: this.useProxy ? 'https_proxy' : 'direct_http',
                 analyst_name: 'Rover System',
-                analyst_comment: `Manually captured during exploration mission. Context: ${objectDetected}. Source: ${this.currentCameraSource.toUpperCase()}`
+                analyst_comment: `Manually captured during exploration mission. Context: ${objectDetected}. Source: ${this.currentCameraSource.toUpperCase()} via ${this.useProxy ? 'HTTPS Proxy' : 'Direct HTTP'}`
             });
 
             this.addStatusLog("Manual capture uploaded to database", "good");
@@ -520,7 +527,8 @@ class RoverController {
         if (this.objectDetectionRunning) return;
         
         this.objectDetectionRunning = true;
-        this.addStatusLog(`Object detection started using ${this.currentCameraSource.toUpperCase()} - MANUAL CAPTURE ONLY`, "good");
+        const connectionType = this.useProxy ? 'HTTPS PROXY' : 'DIRECT HTTP';
+        this.addStatusLog(`Object detection started using ${this.currentCameraSource.toUpperCase()} via ${connectionType} - MANUAL CAPTURE ONLY`, "good");
         
         this.detectionInterval = setInterval(async () => {
             if (this.objectDetectionRunning) {
@@ -554,7 +562,7 @@ class RoverController {
     async captureAndAnalyzeFrame() {
         let frameBlob = null;
         
-        // Get frame from ESP32-CAM first
+        // Get frame from ESP32-CAM first (via proxy when enabled)
         if (this.esp32Cam && this.esp32Cam.isConnected) {
             frameBlob = await this.esp32Cam.getCurrentFrameBlob();
         }
@@ -765,12 +773,12 @@ class RoverController {
 
             const health = await response.json();
             this.addStatusLog("Object detection backend online", "good");
-            console.log('✅ Backend health check passed:', health);
+            console.log('Backend health check passed:', health);
             return true;
 
         } catch (error) {
             this.addStatusLog("Backend not available - using fallback mode", "warning");
-            console.error('❌ Backend health check error:', error);
+            console.error('Backend health check error:', error);
             return false;
         }
     }
@@ -781,7 +789,9 @@ class RoverController {
             connected: this.esp32Cam ? this.esp32Cam.isConnected : false,
             activeElements: this.allVideoElements.filter(v => v && (v.srcObject || v.src)).length,
             totalElements: this.allVideoElements.length,
-            detectionRunning: this.objectDetectionRunning
+            detectionRunning: this.objectDetectionRunning,
+            useProxy: this.useProxy,
+            connectionType: this.useProxy ? 'https_proxy' : 'direct_http'
         };
     }
     
@@ -805,20 +815,33 @@ class RoverController {
     }
 }
 
-// ESP32-CAM HTTP Controller Class
-class ESP32CamHTTPController {
-    constructor(esp32IP, parentController) {
+// ESP32-CAM HTTPS Proxy Controller Class
+class ESP32CamProxyController {
+    constructor(esp32IP, parentController, useProxy = true) {
         this.esp32IP = esp32IP || "192.168.0.102";
-        this.streamPort = 80;
         this.parentController = parentController;
+        this.useProxy = useProxy;
         
-        // Stream endpoints based on ESP32-CAM web server
-        this.endpoints = {
-            stream: `http://${this.esp32IP}:${this.streamPort}/stream`,
-            capture: `http://${this.esp32IP}:${this.streamPort}/capture`,
-            status: `http://${this.esp32IP}:${this.streamPort}/status`,
-            control: `http://${this.esp32IP}:${this.streamPort}/control`
-        };
+        // Get API base URL from config
+        this.apiBaseUrl = window.CONFIG ? window.CONFIG.getApiUrl() : 'https://your-space-name.hf.space';
+        
+        // Endpoints - use proxy or direct based on configuration
+        if (this.useProxy) {
+            this.endpoints = {
+                stream: `${this.apiBaseUrl}/esp32/stream`,
+                capture: `${this.apiBaseUrl}/esp32/capture`,
+                status: `${this.apiBaseUrl}/esp32/status`,
+                control: `${this.apiBaseUrl}/esp32/control`
+            };
+        } else {
+            // Direct HTTP endpoints (for local development)
+            this.endpoints = {
+                stream: `http://${this.esp32IP}:80/stream`,
+                capture: `http://${this.esp32IP}:80/capture`,
+                status: `http://${this.esp32IP}:80/status`,
+                control: `http://${this.esp32IP}:80/control`
+            };
+        }
         
         this.isConnected = false;
         this.videoElements = [];
@@ -827,7 +850,7 @@ class ESP32CamHTTPController {
         this.retryCount = 0;
         this.maxRetries = 5;
         
-        console.log('ESP32-CAM HTTP Controller initialized with IP:', this.esp32IP);
+        console.log(`ESP32-CAM Controller initialized: IP=${this.esp32IP}, Proxy=${this.useProxy}`);
         this.init();
     }
     
@@ -839,7 +862,6 @@ class ESP32CamHTTPController {
     }
     
     findVideoElements() {
-        // Find all elements that should show the ESP32-CAM stream
         const videoSelectors = [
             '#webcam',
             '#roverVideoFeed', 
@@ -862,20 +884,18 @@ class ESP32CamHTTPController {
     }
     
     createStreamImage() {
-        // Create a hidden image element to handle the MJPEG stream
         this.streamImg = document.createElement('img');
         this.streamImg.style.display = 'none';
         this.streamImg.crossOrigin = 'anonymous';
         this.streamImg.id = 'esp32-stream-handler';
         document.body.appendChild(this.streamImg);
         
-        // Handle stream load events
         this.streamImg.onload = () => {
             if (!this.isConnected) {
                 this.isConnected = true;
                 this.retryCount = 0;
                 this.updateConnectionStatus(true);
-                console.log('✅ ESP32-CAM stream connected');
+                console.log(`ESP32-CAM stream connected via ${this.useProxy ? 'HTTPS proxy' : 'direct HTTP'}`);
             }
             this.updateVideoElements();
         };
@@ -884,18 +904,22 @@ class ESP32CamHTTPController {
             if (this.isConnected) {
                 this.isConnected = false;
                 this.updateConnectionStatus(false);
-                console.log('❌ ESP32-CAM stream error');
+                console.log('ESP32-CAM stream error');
             }
             this.handleStreamError();
         };
     }
     
     startStream() {
-        console.log('Starting ESP32-CAM HTTP stream...');
+        console.log(`Starting ESP32-CAM stream via ${this.useProxy ? 'HTTPS proxy' : 'direct HTTP'}...`);
         console.log('Stream URL:', this.endpoints.stream);
         
-        // Add timestamp to prevent caching issues
         const streamUrl = `${this.endpoints.stream}?t=${Date.now()}`;
+        
+        // Set request headers for proxy mode
+        const headers = this.useProxy ? {
+            'X-ESP32-IP': this.esp32IP
+        } : {};
         
         // Set the stream source
         this.streamImg.src = streamUrl;
@@ -907,7 +931,6 @@ class ESP32CamHTTPController {
                     element.src = streamUrl;
                     element.onerror = () => this.handleElementError(element);
                 } else if (element.tagName.toLowerCase() === 'video') {
-                    // For video elements showing MJPEG stream
                     element.src = streamUrl;
                     element.load();
                     element.onerror = () => this.handleElementError(element);
@@ -916,7 +939,8 @@ class ESP32CamHTTPController {
         });
         
         if (this.parentController) {
-            this.parentController.addStatusLog("Starting ESP32-CAM stream", "good");
+            const mode = this.useProxy ? 'HTTPS Proxy' : 'Direct HTTP';
+            this.parentController.addStatusLog(`Starting ESP32-CAM stream via ${mode}`, "good");
         }
     }
     
@@ -947,7 +971,7 @@ class ESP32CamHTTPController {
     handleStreamError() {
         this.retryCount++;
         if (this.retryCount <= this.maxRetries) {
-            const retryDelay = Math.min(1000 * Math.pow(2, this.retryCount), 10000); // Exponential backoff
+            const retryDelay = Math.min(1000 * Math.pow(2, this.retryCount), 10000);
             console.log(`ESP32-CAM stream retry ${this.retryCount}/${this.maxRetries} in ${retryDelay}ms`);
             
             if (this.parentController) {
@@ -962,14 +986,14 @@ class ESP32CamHTTPController {
         } else {
             console.error('ESP32-CAM stream failed after maximum retries');
             if (this.parentController) {
-                this.parentController.addStatusLog("ESP32-CAM stream failed - check connection", "error");
+                const mode = this.useProxy ? 'proxy' : 'direct';
+                this.parentController.addStatusLog(`ESP32-CAM stream failed via ${mode} - check connection`, "error");
             }
         }
     }
     
     handleElementError(element) {
         console.warn('Stream element error:', element.id || element.tagName);
-        // Try to reload the element after a short delay
         setTimeout(() => {
             if (this.isConnected && element) {
                 element.src = `${this.endpoints.stream}?t=${Date.now()}`;
@@ -981,7 +1005,6 @@ class ESP32CamHTTPController {
     }
     
     updateVideoElements() {
-        // Update all video elements with the current stream
         const timestamp = Date.now();
         const streamUrl = `${this.endpoints.stream}?t=${timestamp}`;
         
@@ -997,7 +1020,6 @@ class ESP32CamHTTPController {
     }
     
     startConnectionMonitoring() {
-        // Check connection every 10 seconds
         this.connectionCheckInterval = setInterval(async () => {
             const isAlive = await this.checkConnection();
             
@@ -1011,7 +1033,6 @@ class ESP32CamHTTPController {
             }
         }, 10000);
         
-        // Initial connection attempt after 2 seconds
         setTimeout(() => this.startStream(), 2000);
     }
     
@@ -1020,15 +1041,28 @@ class ESP32CamHTTPController {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
             
-            // Try to fetch the main page instead of status (which might not exist)
-            const response = await fetch(`http://${this.esp32IP}:${this.streamPort}/`, {
-                method: 'HEAD', // Use HEAD to minimize data transfer
+            const headers = this.useProxy ? {
+                'X-ESP32-IP': this.esp32IP
+            } : {};
+            
+            const response = await fetch(this.endpoints.status, {
+                method: 'GET',
                 signal: controller.signal,
-                cache: 'no-cache'
+                cache: 'no-cache',
+                headers: headers
             });
             
             clearTimeout(timeoutId);
-            return response.ok || response.status === 404; // 404 is OK, means server is responding
+            
+            if (this.useProxy) {
+                if (response.ok) {
+                    const status = await response.json();
+                    return status.status === 'online';
+                }
+                return false;
+            } else {
+                return response.ok || response.status === 404;
+            }
         } catch (error) {
             return false;
         }
@@ -1037,24 +1071,29 @@ class ESP32CamHTTPController {
     updateConnectionStatus(connected) {
         this.isConnected = connected;
         
-        // Update parent controller's connection status
         if (this.parentController) {
             this.parentController.updateConnectionStatus(connected);
         }
         
-        console.log(`ESP32-CAM connection status: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`);
+        const mode = this.useProxy ? 'HTTPS Proxy' : 'Direct HTTP';
+        console.log(`ESP32-CAM connection status via ${mode}: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`);
     }
     
-    // Capture a single frame from the ESP32-CAM
+    // Capture a single frame from the ESP32-CAM (via proxy when enabled)
     async captureFrame() {
         try {
+            const headers = this.useProxy ? {
+                'X-ESP32-IP': this.esp32IP
+            } : {};
+            
             const response = await fetch(this.endpoints.capture, {
-                cache: 'no-cache'
+                cache: 'no-cache',
+                headers: headers
             });
             
             if (response.ok) {
                 const blob = await response.blob();
-                console.log('Frame captured from ESP32-CAM');
+                console.log(`Frame captured from ESP32-CAM via ${this.useProxy ? 'proxy' : 'direct'}`);
                 return blob;
             } else {
                 throw new Error(`Capture failed: ${response.status}`);
@@ -1065,7 +1104,6 @@ class ESP32CamHTTPController {
         }
     }
     
-    // Get current frame as canvas (for analysis)
     getCurrentFrameCanvas() {
         return new Promise((resolve) => {
             if (!this.streamImg || !this.streamImg.complete || !this.isConnected) {
@@ -1089,7 +1127,6 @@ class ESP32CamHTTPController {
         });
     }
     
-    // Get current frame as blob (for sending to backend)
     async getCurrentFrameBlob() {
         // Try capture endpoint first (better quality)
         let frameBlob = await this.captureFrame();
@@ -1107,14 +1144,21 @@ class ESP32CamHTTPController {
         return frameBlob;
     }
     
-    // Camera control methods (ESP32-CAM web server supports these)
+    // Camera control methods (via proxy when enabled)
     async setCameraParameter(parameter, value) {
         try {
+            const headers = this.useProxy ? {
+                'X-ESP32-IP': this.esp32IP
+            } : {};
+            
             const url = `${this.endpoints.control}?var=${parameter}&val=${value}`;
-            const response = await fetch(url, { cache: 'no-cache' });
+            const response = await fetch(url, { 
+                cache: 'no-cache',
+                headers: headers
+            });
             
             if (response.ok) {
-                console.log(`Camera parameter ${parameter} set to ${value}`);
+                console.log(`Camera parameter ${parameter} set to ${value} via ${this.useProxy ? 'proxy' : 'direct'}`);
                 if (this.parentController) {
                     this.parentController.addStatusLog(`Camera ${parameter}: ${value}`, "good");
                 }
@@ -1131,23 +1175,16 @@ class ESP32CamHTTPController {
         }
     }
     
-    // Convenience methods for common camera adjustments
-    async setBrightness(value) { // -2 to 2
-        return this.setCameraParameter('brightness', Math.max(-2, Math.min(2, value)));
-    }
+    async setBrightness(value) { return this.setCameraParameter('brightness', Math.max(-2, Math.min(2, value))); }
+    async setContrast(value) { return this.setCameraParameter('contrast', Math.max(-2, Math.min(2, value))); }
+    async setSaturation(value) { return this.setCameraParameter('saturation', Math.max(-2, Math.min(2, value))); }
+    async setQuality(value) { return this.setCameraParameter('quality', Math.max(10, Math.min(63, value))); }
+    async setSpecialEffect(value) { return this.setCameraParameter('special_effect', Math.max(0, Math.min(6, value))); }
+    async setWhiteBalance(value) { return this.setCameraParameter('wb_mode', Math.max(0, Math.min(4, value))); }
     
-    async setContrast(value) { // -2 to 2
-        return this.setCameraParameter('contrast', Math.max(-2, Math.min(2, value)));
-    }
-    
-    async setSaturation(value) { // -2 to 2
-        return this.setCameraParameter('saturation', Math.max(-2, Math.min(2, value)));
-    }
-    
-    async setFrameSize(value) { // 0-10 (FRAMESIZE_96X96 to FRAMESIZE_UXGA)
+    async setFrameSize(value) {
         const success = await this.setCameraParameter('framesize', Math.max(0, Math.min(10, value)));
         if (success) {
-            // Restart stream after frame size change
             setTimeout(() => {
                 this.stopStream();
                 setTimeout(() => this.startStream(), 1000);
@@ -1156,20 +1193,7 @@ class ESP32CamHTTPController {
         return success;
     }
     
-    async setQuality(value) { // 10-63 (lower = better quality)
-        return this.setCameraParameter('quality', Math.max(10, Math.min(63, value)));
-    }
-    
-    async setSpecialEffect(value) { // 0-6 (No Effect, Negative, Grayscale, etc.)
-        return this.setCameraParameter('special_effect', Math.max(0, Math.min(6, value)));
-    }
-    
-    async setWhiteBalance(value) { // 0-4 (Auto, Sunny, Cloudy, Office, Home)
-        return this.setCameraParameter('wb_mode', Math.max(0, Math.min(4, value)));
-    }
-    
     setupEventListeners() {
-        // Camera control UI elements (if they exist)
         const controls = [
             { id: 'esp32-brightness', method: 'setBrightness', min: -2, max: 2 },
             { id: 'esp32-contrast', method: 'setContrast', min: -2, max: 2 },
@@ -1191,7 +1215,6 @@ class ESP32CamHTTPController {
             }
         });
         
-        // Manual reconnect button
         const reconnectBtn = document.getElementById('reconnect-esp32');
         if (reconnectBtn) {
             reconnectBtn.addEventListener('click', () => {
@@ -1201,50 +1224,13 @@ class ESP32CamHTTPController {
                 setTimeout(() => this.startStream(), 1000);
             });
         }
-        
-        // Stream quality preset buttons
-        const presetButtons = {
-            'esp32-preset-high': () => this.applyPreset('high'),
-            'esp32-preset-medium': () => this.applyPreset('medium'),
-            'esp32-preset-low': () => this.applyPreset('low')
-        };
-        
-        Object.entries(presetButtons).forEach(([id, action]) => {
-            const btn = document.getElementById(id);
-            if (btn) {
-                btn.addEventListener('click', action);
-            }
-        });
     }
     
-    async applyPreset(preset) {
-        console.log(`Applying ESP32-CAM preset: ${preset}`);
-        
-        switch (preset) {
-            case 'high':
-                await this.setQuality(10); // Best quality
-                await this.setFrameSize(9); // SXGA (1280x1024)
-                break;
-            case 'medium':
-                await this.setQuality(20);
-                await this.setFrameSize(7); // VGA (640x480)
-                break;
-            case 'low':
-                await this.setQuality(40);
-                await this.setFrameSize(5); // CIF (400x296)
-                break;
-        }
-        
-        if (this.parentController) {
-            this.parentController.addStatusLog(`Applied ${preset} quality preset`, "good");
-        }
-    }
-    
-    // Get camera status info
     getCameraInfo() {
         return {
             connected: this.isConnected,
             ip: this.esp32IP,
+            useProxy: this.useProxy,
             streamUrl: this.endpoints.stream,
             retryCount: this.retryCount,
             maxRetries: this.maxRetries,
@@ -1252,7 +1238,6 @@ class ESP32CamHTTPController {
         };
     }
     
-    // Cleanup method
     destroy() {
         if (this.connectionCheckInterval) {
             clearInterval(this.connectionCheckInterval);
@@ -1266,7 +1251,7 @@ class ESP32CamHTTPController {
             this.streamImg = null;
         }
         
-        console.log('ESP32-CAM HTTP Controller destroyed');
+        console.log('ESP32-CAM Controller destroyed');
     }
 }
 

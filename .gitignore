@@ -8,4 +8,6 @@ yolov5/
 
 .env
 
-api/
+backend/
+
+backend/

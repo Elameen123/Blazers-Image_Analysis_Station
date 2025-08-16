@@ -1,5 +1,5 @@
-// Static Configuration for Blazers Mars Rover Frontend with ESP32-CAM Support
-// This approach works without Node.js or build tools
+// Static Configuration for Blazers Mars Rover Frontend with ESP32-CAM Proxy Support
+// This approach works without Node.js or build tools and solves HTTPS mixed content issues
 
 const CONFIG = {
     // Production vs Development Detection
@@ -10,11 +10,11 @@ const CONFIG = {
     // Environment-based API Configuration
     API_ENDPOINTS: {
         DEVELOPMENT: {
-             HUGGINGFACE_API: 'https://elameen123-blazers-image-analysis-station.hf.space',
+            HUGGINGFACE_API: 'https://elameen123-blazers-image-analysis-station.hf.space',
             FALLBACK_API: 'https://elameen123-blazers-image-analysis-station.hf.space'
         },
         PRODUCTION: {
-            // You'll replace this with your actual Hugging Face Space URL to use
+            // Your actual Hugging Face Space URL
             HUGGINGFACE_API: 'https://elameen123-blazers-image-analysis-station.hf.space',
             FALLBACK_API: 'https://elameen123-blazers-image-analysis-station.hf.space'
         }
@@ -30,12 +30,11 @@ const CONFIG = {
         appId: "1:464730486363:web:78ccfde176cea53e21317e"
     },
     
-    // ESP32-CAM Configuration
+    // ESP32-CAM Configuration - Now uses HTTPS proxy instead of direct HTTP
     ESP32_CONFIG: {
-        // IMPORTANT: Update this IP address with your ESP32-CAM's actual IP
-        // Check your Arduino Serial Monitor after uploading the code
-        IP: "192.168.0.102", // Replace with your ESP32-CAM IP address
-        PORT: 80, // Standard HTTP port for ESP32-CAM web server
+        // The actual ESP32-CAM IP (used by backend proxy)
+        IP: "192.168.0.102", // Still needed for backend proxy
+        PORT: 80,
         
         // Connection settings
         RECONNECT_DELAY: 3000,
@@ -59,7 +58,10 @@ const CONFIG = {
             framesize: 7,     // 0-10 (see framesize constants)
             special_effect: 0, // 0-6 (No Effect, Negative, Grayscale, etc.)
             wb_mode: 0        // 0-4 (Auto, Sunny, Cloudy, Office, Home)
-        }
+        },
+        
+        // NEW: Use HTTPS proxy instead of direct HTTP connection
+        USE_PROXY: true
     },
     
     // Legacy ESP32 Configuration (kept for compatibility)
@@ -73,8 +75,17 @@ const CONFIG = {
         DETECT: '/detect' // Your current Hugging Face endpoint
     },
     
-    // ESP32-CAM Specific Endpoints
-    ESP32_ENDPOINTS: {
+    // ESP32-CAM Proxy Endpoints (HTTPS-safe)
+    ESP32_PROXY_ENDPOINTS: {
+        STREAM: '/esp32/stream',
+        CAPTURE: '/esp32/capture',
+        STATUS: '/esp32/status',
+        CONTROL: '/esp32/control',
+        COMMAND: '/esp32/command' // WebSocket proxy
+    },
+    
+    // ESP32-CAM Direct Endpoints (for fallback/local development)
+    ESP32_DIRECT_ENDPOINTS: {
         STREAM: '/stream',
         CAPTURE: '/capture',
         STATUS: '/status',
@@ -100,13 +111,23 @@ CONFIG.getEndpointUrl = function(endpointKey) {
     return this.getApiUrl(endpoint);
 };
 
-// ESP32-CAM URL builders
+// ESP32-CAM URL builders - Now supports both proxy and direct modes
 CONFIG.getESP32Url = function(endpoint = '') {
-    return `http://${this.ESP32_CONFIG.IP}:${this.ESP32_CONFIG.PORT}${endpoint}`;
+    if (this.ESP32_CONFIG.USE_PROXY) {
+        // Use HTTPS proxy through the backend (solves mixed content issue)
+        return this.getApiUrl(endpoint);
+    } else {
+        // Direct HTTP connection (for local development only)
+        return `http://${this.ESP32_CONFIG.IP}:${this.ESP32_CONFIG.PORT}${endpoint}`;
+    }
 };
 
 CONFIG.getESP32EndpointUrl = function(endpointKey) {
-    const endpoint = this.ESP32_ENDPOINTS[endpointKey] || '';
+    const endpoints = this.ESP32_CONFIG.USE_PROXY ? 
+        this.ESP32_PROXY_ENDPOINTS : 
+        this.ESP32_DIRECT_ENDPOINTS;
+    
+    const endpoint = endpoints[endpointKey] || '';
     return this.getESP32Url(endpoint);
 };
 
@@ -120,37 +141,68 @@ CONFIG.getCaptureUrl = function() {
 };
 
 CONFIG.getControlUrl = function(parameter, value) {
-    return `${this.getESP32EndpointUrl('CONTROL')}?var=${parameter}&val=${value}`;
+    const baseUrl = this.getESP32EndpointUrl('CONTROL');
+    return `${baseUrl}?var=${parameter}&val=${value}`;
 };
 
-// ESP32-CAM connection test
+// ESP32-CAM WebSocket URL (uses proxy for HTTPS sites)
+CONFIG.getCommandWebSocketUrl = function() {
+    if (this.ESP32_CONFIG.USE_PROXY) {
+        // Use WSS proxy through backend
+        const apiUrl = this.getApiUrl('');
+        const wsUrl = apiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+        return `${wsUrl}/esp32/command?esp32_ip=${this.ESP32_CONFIG.IP}`;
+    } else {
+        // Direct WebSocket connection (for local development)
+        return `ws://${this.ESP32_CONFIG.IP}:${this.ESP32_CONFIG.PORT}/Command`;
+    }
+};
+
+// ESP32-CAM connection test - Updated for proxy support
 CONFIG.testESP32Connection = async function() {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.ESP32_CONFIG.CONNECTION_TIMEOUT);
         
-        const response = await fetch(this.getESP32Url('/'), {
-            method: 'HEAD',
+        // Use proxy status endpoint if proxy is enabled
+        const testUrl = this.ESP32_CONFIG.USE_PROXY ? 
+            this.getApiUrl('/esp32/status') : 
+            this.getESP32Url('/');
+        
+        const response = await fetch(testUrl, {
+            method: 'GET',
             signal: controller.signal,
-            cache: 'no-cache'
+            cache: 'no-cache',
+            headers: this.ESP32_CONFIG.USE_PROXY ? {
+                'X-ESP32-IP': this.ESP32_CONFIG.IP
+            } : {}
         });
         
         clearTimeout(timeoutId);
-        return response.ok || response.status === 404; // 404 is OK, server is responding
+        
+        if (this.ESP32_CONFIG.USE_PROXY) {
+            // For proxy, check the JSON response
+            const status = await response.json();
+            return status.status === 'online';
+        } else {
+            // For direct connection
+            return response.ok || response.status === 404;
+        }
     } catch (error) {
         console.error('ESP32-CAM connection test failed:', error);
         return false;
     }
 };
 
-// ESP32-CAM setup validation
+// ESP32-CAM setup validation - Updated for proxy support
 CONFIG.validateESP32Setup = async function() {
-    console.log('🔍 Validating ESP32-CAM setup...');
+    console.log('Validating ESP32-CAM setup...');
     
     const results = {
         ipReachable: false,
         streamAvailable: false,
         captureAvailable: false,
+        proxyMode: this.ESP32_CONFIG.USE_PROXY,
         recommendations: []
     };
     
@@ -158,10 +210,17 @@ CONFIG.validateESP32Setup = async function() {
     results.ipReachable = await this.testESP32Connection();
     
     if (!results.ipReachable) {
-        results.recommendations.push('❌ ESP32-CAM not reachable. Check:');
-        results.recommendations.push('   • IP address in config.js matches ESP32 Serial Monitor output');
-        results.recommendations.push('   • ESP32-CAM and computer are on same WiFi network');
-        results.recommendations.push('   • ESP32-CAM code is uploaded and running');
+        if (this.ESP32_CONFIG.USE_PROXY) {
+            results.recommendations.push('ESP32-CAM not reachable through proxy. Check:');
+            results.recommendations.push('   • Backend proxy server is running');
+            results.recommendations.push('   • ESP32-CAM IP is correct in config.js');
+            results.recommendations.push('   • ESP32-CAM and backend server are on same network');
+        } else {
+            results.recommendations.push('ESP32-CAM not reachable directly. Check:');
+            results.recommendations.push('   • IP address in config.js matches ESP32 Serial Monitor output');
+            results.recommendations.push('   • ESP32-CAM and computer are on same WiFi network');
+            results.recommendations.push('   • ESP32-CAM code is uploaded and running');
+        }
         return results;
     }
     
@@ -169,7 +228,10 @@ CONFIG.validateESP32Setup = async function() {
     try {
         const streamResponse = await fetch(this.getStreamUrl(), { 
             method: 'HEAD',
-            cache: 'no-cache' 
+            cache: 'no-cache',
+            headers: this.ESP32_CONFIG.USE_PROXY ? {
+                'X-ESP32-IP': this.ESP32_CONFIG.IP
+            } : {}
         });
         results.streamAvailable = streamResponse.ok;
     } catch (error) {
@@ -180,7 +242,10 @@ CONFIG.validateESP32Setup = async function() {
     try {
         const captureResponse = await fetch(this.getCaptureUrl(), { 
             method: 'HEAD',
-            cache: 'no-cache' 
+            cache: 'no-cache',
+            headers: this.ESP32_CONFIG.USE_PROXY ? {
+                'X-ESP32-IP': this.ESP32_CONFIG.IP
+            } : {}
         });
         results.captureAvailable = captureResponse.ok;
     } catch (error) {
@@ -188,19 +253,27 @@ CONFIG.validateESP32Setup = async function() {
     }
     
     // Generate recommendations
+    const mode = this.ESP32_CONFIG.USE_PROXY ? 'HTTPS Proxy' : 'Direct HTTP';
+    
     if (results.streamAvailable && results.captureAvailable) {
-        results.recommendations.push('✅ ESP32-CAM fully functional!');
-        results.recommendations.push('📹 Stream available at: ' + this.getStreamUrl());
-        results.recommendations.push('📸 Capture available at: ' + this.getCaptureUrl());
+        results.recommendations.push(`ESP32-CAM fully functional via ${mode}!`);
+        results.recommendations.push(`Stream available at: ${this.getStreamUrl()}`);
+        results.recommendations.push(`Capture available at: ${this.getCaptureUrl()}`);
     } else {
-        results.recommendations.push('⚠️ ESP32-CAM partially functional:');
+        results.recommendations.push(`ESP32-CAM partially functional via ${mode}:`);
         if (!results.streamAvailable) {
             results.recommendations.push('   • Stream endpoint not working');
         }
         if (!results.captureAvailable) {
             results.recommendations.push('   • Capture endpoint not working');
         }
-        results.recommendations.push('   • Try uploading standard ESP32-CAM web server example');
+        
+        if (this.ESP32_CONFIG.USE_PROXY) {
+            results.recommendations.push('   • Check backend proxy server logs');
+            results.recommendations.push('   • Verify ESP32-CAM is accessible from backend server');
+        } else {
+            results.recommendations.push('   • Try uploading standard ESP32-CAM web server example');
+        }
     }
     
     return results;
@@ -208,11 +281,10 @@ CONFIG.validateESP32Setup = async function() {
 
 // Auto-detect ESP32-CAM IP (experimental)
 CONFIG.scanForESP32 = async function() {
-    console.log('🔍 Scanning local network for ESP32-CAM...');
+    console.log('Scanning local network for ESP32-CAM...');
     
     // Get local IP range (basic implementation)
     const getLocalIPRange = () => {
-        // This is a simplified approach - in production, you might want more sophisticated network detection
         const commonRanges = [
             '192.168.1.',
             '192.168.0.',
@@ -220,7 +292,6 @@ CONFIG.scanForESP32 = async function() {
             '172.16.0.'
         ];
         
-        // Try to detect from current page URL if running locally
         try {
             const hostname = window.location.hostname;
             if (hostname.startsWith('192.168.') || hostname.startsWith('10.0.') || hostname.startsWith('172.16.')) {
@@ -237,20 +308,21 @@ CONFIG.scanForESP32 = async function() {
     const ipRanges = getLocalIPRange();
     const foundDevices = [];
     
-    // This is a basic scan - in production, you'd want to use more sophisticated methods
-    console.log('⚠️ ESP32-CAM auto-detection is experimental. Manual IP configuration recommended.');
+    console.log('ESP32-CAM auto-detection is experimental. Manual IP configuration recommended.');
     
     return foundDevices;
 };
 
 // For debugging - remove in production
 CONFIG.debug = function() {
-    console.log('🚀 Blazers Configuration:', {
+    console.log('Blazers Configuration:', {
         environment: this.IS_DEVELOPMENT ? 'DEVELOPMENT' : 'PRODUCTION',
         hostname: window.location.hostname,
         apiBaseUrl: this.getApiUrl(),
         esp32IP: this.ESP32_CONFIG.IP,
+        proxyMode: this.ESP32_CONFIG.USE_PROXY,
         esp32StreamUrl: this.getStreamUrl(),
+        esp32CommandWsUrl: this.getCommandWebSocketUrl(),
         healthEndpoint: this.getEndpointUrl('HEALTH'),
         predictEndpoint: this.getEndpointUrl('PREDICT')
     });
@@ -258,11 +330,13 @@ CONFIG.debug = function() {
 
 // ESP32-CAM specific debugging
 CONFIG.debugESP32 = function() {
-    console.log('📹 ESP32-CAM Configuration:', {
+    console.log('ESP32-CAM Configuration:', {
         ip: this.ESP32_CONFIG.IP,
         port: this.ESP32_CONFIG.PORT,
+        useProxy: this.ESP32_CONFIG.USE_PROXY,
         streamUrl: this.getStreamUrl(),
         captureUrl: this.getCaptureUrl(),
+        commandWsUrl: this.getCommandWebSocketUrl(),
         defaultSettings: this.ESP32_CONFIG.DEFAULT_SETTINGS,
         qualityPresets: this.ESP32_CONFIG.QUALITY_PRESETS
     });
@@ -271,18 +345,21 @@ CONFIG.debugESP32 = function() {
 // Initialize ESP32-CAM validation on load
 CONFIG.initESP32Validation = async function() {
     if (this.IS_DEVELOPMENT) {
-        console.log('🔧 Development mode: Running ESP32-CAM validation...');
+        console.log('Development mode: Running ESP32-CAM validation...');
         
-        // Wait a bit for page to load
         setTimeout(async () => {
             const validation = await this.validateESP32Setup();
             
-            console.log('📹 ESP32-CAM Validation Results:');
+            console.log('ESP32-CAM Validation Results:');
             validation.recommendations.forEach(rec => console.log(rec));
             
             if (!validation.ipReachable) {
-                console.log('💡 Quick Fix: Update CONFIG.ESP32_CONFIG.IP in config.js with your ESP32-CAM IP address');
-                console.log('   You can find this in the Arduino Serial Monitor after uploading the code');
+                if (this.ESP32_CONFIG.USE_PROXY) {
+                    console.log('Quick Fix: Ensure backend proxy server is running and ESP32-CAM is accessible');
+                } else {
+                    console.log('Quick Fix: Update CONFIG.ESP32_CONFIG.IP in config.js with your ESP32-CAM IP address');
+                    console.log('   You can find this in the Arduino Serial Monitor after uploading the code');
+                }
             }
         }, 3000);
     }
@@ -298,4 +375,4 @@ if (CONFIG.IS_DEVELOPMENT) {
     CONFIG.initESP32Validation();
 }
 
-console.log('✅ Blazers Configuration with ESP32-CAM support loaded successfully');
+console.log('Blazers Configuration with ESP32-CAM HTTPS proxy support loaded successfully');
