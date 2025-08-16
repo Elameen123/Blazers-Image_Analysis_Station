@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (roverController) {
             setTimeout(() => roverController.startObjectDetection(), 1000);
         }
-    }
+}
 
     function switchToAnalysisMode() {
         toggleText.innerText = "Analysis Mode";
@@ -166,11 +166,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (expandIcon) expandIcon.style.display = "none";
         if (cameraSourceDropdown) cameraSourceDropdown.style.display = "none";
         
-        // Stop object detection when switching to analysis mode
+        // Stop object detection and cleanup exploration mode
         if (roverController) {
             roverController.stopObjectDetection();
+            roverController.stopExplorationMode(); // Add this line
         }
-    }
+}
 
     if (toggleMode) {
         toggleMode.addEventListener('change', function() {
@@ -184,6 +185,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Initialize in Analysis Mode
     switchToAnalysisMode();
+
     
     // Enhanced camera icon functionality - manual capture only
     if (cameraIcon) {

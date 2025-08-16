@@ -36,6 +36,7 @@ class RoverController {
         this.currentCameraSource = "esp32"; // Default to ESP32-CAM
         this.localStream = null;
         this.allVideoElements = [];
+        this.esp32ConnectionMonitor = null;
         
         this.detectableObjects = [
             'person', 'hammer', 'balloon', 'tennis_ball', 'traffic_cone'
@@ -522,6 +523,80 @@ class RoverController {
             this.addStatusLog("Database update failed", "error");
         }
     }
+
+    startExplorationMode() {
+    console.log('Starting exploration mode with automatic camera switching');
+    
+    // Start with webcam immediately
+    this.switchCameraSource('webcam');
+    
+    // Start object detection on webcam
+    setTimeout(() => {
+        this.startObjectDetection();
+        this.addStatusLog("Object detection started on webcam", "good");
+    }, 1000);
+    
+    // Begin monitoring for ESP32-CAM connection
+    this.startESP32ConnectionMonitoring();
+}
+
+startESP32ConnectionMonitoring() {
+    if (this.esp32ConnectionMonitor) {
+        clearInterval(this.esp32ConnectionMonitor);
+    }
+    
+    this.esp32ConnectionMonitor = setInterval(async () => {
+        // Only check if we're still on webcam
+        if (this.currentCameraSource === 'webcam' && this.esp32Cam) {
+            const esp32Available = await this.esp32Cam.checkConnection();
+            
+            if (esp32Available && !this.esp32Cam.isConnected) {
+                this.addStatusLog("ESP32-CAM detected - switching in 2s", "warning");
+                console.log('ESP32-CAM available, initiating switch...');
+                
+                // Wait 2 seconds then switch
+                setTimeout(() => {
+                    this.switchToESP32FromWebcam();
+                }, 2000);
+                
+                // Stop monitoring once we've initiated the switch
+                clearInterval(this.esp32ConnectionMonitor);
+                this.esp32ConnectionMonitor = null;
+            }
+        }
+    }, 3000); // Check every 3 seconds
+}
+
+switchToESP32FromWebcam() {
+    if (this.currentCameraSource !== 'webcam') {
+        return; // Already switched or not on webcam
+    }
+    
+    console.log('Switching from webcam to ESP32-CAM...');
+    this.addStatusLog("Switching from webcam to ESP32-CAM", "good");
+    
+    // Switch camera source (this maintains object detection)
+    this.switchCameraSource('esp32');
+    
+    // Update dropdown if it exists
+    const cameraSourceSelect = document.getElementById('camera-source-select');
+    if (cameraSourceSelect) {
+        cameraSourceSelect.value = 'esp32';
+    }
+    
+    this.addStatusLog("Successfully switched to ESP32-CAM", "good");
+}
+
+    stopExplorationMode() {
+            // Stop ESP32 connection monitoring
+            if (this.esp32ConnectionMonitor) {
+                clearInterval(this.esp32ConnectionMonitor);
+                this.esp32ConnectionMonitor = null;
+            }
+            
+            this.addStatusLog("Exploration mode stopped", "warning");
+            console.log('Exploration mode stopped');
+        }
     
     startObjectDetection() {
         if (this.objectDetectionRunning) return;
