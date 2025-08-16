@@ -33,7 +33,7 @@ const CONFIG = {
     // ESP32-CAM Configuration - Now uses HTTPS proxy instead of direct HTTP
     ESP32_CONFIG: {
         // The actual ESP32-CAM IP (used by backend proxy)
-        IP: "192.168.0.102", // Still needed for backend proxy
+        IP: "192.168.4.1", // Still needed for backend proxy
         PORT: 80,
         
         // Connection settings
@@ -65,7 +65,7 @@ const CONFIG = {
     },
     
     // Legacy ESP32 Configuration (kept for compatibility)
-    ESP32_IP: "192.168.0.102", // This will be updated from ESP32_CONFIG.IP
+    ESP32_IP: "192.168.4.1", // This will be updated from ESP32_CONFIG.IP
     
     // API Endpoint Paths
     ENDPOINTS: {
